@@ -1,5 +1,9 @@
 package io.sqleicht.core;
 
+import java.util.Map;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
 public enum SQLiteResultCode {
   OK(0),
   ERROR(1),
@@ -69,12 +73,10 @@ public enum SQLiteResultCode {
     return this != OK && this != ROW && this != DONE;
   }
 
+  private static final Map<Integer, SQLiteResultCode> CODE_MAP =
+      Stream.of(values()).collect(Collectors.toUnmodifiableMap(rc -> rc.code, rc -> rc));
+
   public static SQLiteResultCode fromCode(int code) {
-    for (SQLiteResultCode rc : values()) {
-      if (rc.code == code) {
-        return rc;
-      }
-    }
-    return UNKNOWN;
+    return CODE_MAP.getOrDefault(code, UNKNOWN);
   }
 }

@@ -2,7 +2,9 @@ package io.sqleicht.core;
 
 import io.sqleicht.SQLeichtConfig;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.LockSupport;
 
 public final class ConnectionExecutor implements AutoCloseable {
   private static final int RUNNING = 0;
@@ -84,17 +86,9 @@ public final class ConnectionExecutor implements AutoCloseable {
       try {
         // Handle evict (max-lifetime rotation) or reopen (after idle close)
         if (slot.evict) {
-          try {
-            slot.rotate();
-          } catch (SQLeichtException e) {
-            // rotation failed — continue with existing connection
-          }
+          slot.rotate();
         } else if (!slot.isConnectionOpen()) {
-          try {
-            slot.openConnection();
-          } catch (SQLeichtException e) {
-            // reopen failed — task will fail with a clear error
-          }
+          slot.openConnection();
         }
 
         heldSlot.set(slot);
@@ -165,17 +159,24 @@ public final class ConnectionExecutor implements AutoCloseable {
   }
 
   /**
-   * Spins to find an unlocked slot. The semaphore guarantees at most N concurrent callers for N
-   * slots, so at least one slot will become available.
+   * Spin-then-park to find an unlocked slot. The semaphore guarantees at most N concurrent callers
+   * for N slots, so at least one slot will become available. We spin briefly (cheap under low
+   * contention), then park to avoid burning CPU under sustained contention.
    */
   private ConnectionSlot acquireSlot() {
+    int spins = 0;
     while (true) {
       for (ConnectionSlot slot : slots) {
         if (slot.lock().tryLock()) {
           return slot;
         }
       }
-      Thread.yield();
+      if (spins < 8) {
+        Thread.onSpinWait();
+        spins++;
+      } else {
+        LockSupport.parkNanos(1_000); // 1µs — yield the thread instead of burning CPU
+      }
     }
   }
 
@@ -194,7 +195,7 @@ public final class ConnectionExecutor implements AutoCloseable {
         if (!slot.lock().tryLock()) continue; // skip busy slots
         try {
           // Max lifetime eviction with random variance to prevent thundering herd
-          long variance = (long) (Math.random() * ((double) maxLifetimeNanos / 4));
+          long variance = ThreadLocalRandom.current().nextLong(maxLifetimeNanos / 4);
           long effectiveLifetime = maxLifetimeNanos - variance;
           if (slot.isConnectionOpen() && now - slot.createdAt > effectiveLifetime) {
             slot.evict = true;

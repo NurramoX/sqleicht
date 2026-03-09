@@ -7,6 +7,7 @@ import static java.lang.foreign.ValueLayout.JAVA_INT;
 import static java.lang.foreign.ValueLayout.JAVA_LONG;
 
 import io.sqleicht.core.SQLeichtException;
+import io.sqleicht.core.SQLiteResultCode;
 import io.sqleicht.util.Utf8;
 import java.lang.foreign.Arena;
 import java.lang.foreign.FunctionDescriptor;
@@ -240,6 +241,13 @@ public final class SQLiteNative {
       return (int) STEP.invokeExact(stmt);
     } catch (Throwable t) {
       throw new AssertionError("FFM call failed", t);
+    }
+  }
+
+  public static void stepUpdate(MemorySegment db, MemorySegment stmt) throws SQLeichtException {
+    int rc = step(stmt);
+    if (rc != SQLiteResultCode.DONE.code()) {
+      throw SQLeichtException.fromConnection(db, rc);
     }
   }
 

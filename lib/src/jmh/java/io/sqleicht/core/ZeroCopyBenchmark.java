@@ -1,10 +1,6 @@
-package io.sqleicht.ffi;
+package io.sqleicht.core;
 
-import io.sqleicht.core.SQLeichtException;
-import io.sqleicht.core.SQLiteConnectionHandle;
-import io.sqleicht.core.SQLiteOpenFlag;
-import io.sqleicht.core.SQLiteResultCode;
-import io.sqleicht.core.SQLiteStatementHandle;
+import io.sqleicht.ffi.SQLiteNative;
 import java.lang.foreign.MemorySegment;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;

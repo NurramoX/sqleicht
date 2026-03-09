@@ -20,18 +20,18 @@ public final class SQLiteStatementHandle implements AutoCloseable {
     return new SQLiteStatementHandle(connection, stmt);
   }
 
-  public MemorySegment stmt() {
+  MemorySegment stmt() {
     if (isClosed()) {
       throw new IllegalStateException("Statement is closed");
     }
     return stmt;
   }
 
-  public SQLiteConnectionHandle connection() {
+  SQLiteConnectionHandle connection() {
     return connection;
   }
 
-  public boolean isClosed() {
+  boolean isClosed() {
     return stmt == null;
   }
 

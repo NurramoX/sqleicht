@@ -93,11 +93,11 @@ public final class SQLeichtStatement {
   }
 
   public long executeUpdate() throws SQLeichtException {
-    return db.executeUpdate(sql, bindings.toArray());
+    return db.update(sql, bindings.toArray());
   }
 
   public SQLeichtRows query() throws SQLeichtException {
-    return db.executeQuery(sql, bindings.toArray());
+    return db.query(sql, bindings.toArray());
   }
 
   public SQLeichtStatement reset() {

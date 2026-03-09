@@ -2,23 +2,14 @@ package io.sqleicht;
 
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 
 public final class SQLeichtRows implements Iterable<SQLeichtRow>, AutoCloseable {
   private final List<SQLeichtRow> rows;
   private final String[] columnNames;
-  private final int[] columnTypes;
-  private final Map<String, Integer> nameIndex;
 
-  SQLeichtRows(
-      List<SQLeichtRow> rows,
-      String[] columnNames,
-      int[] columnTypes,
-      Map<String, Integer> nameIndex) {
+  public SQLeichtRows(List<SQLeichtRow> rows, String[] columnNames) {
     this.rows = rows;
     this.columnNames = columnNames;
-    this.columnTypes = columnTypes;
-    this.nameIndex = nameIndex;
   }
 
   public int size() {

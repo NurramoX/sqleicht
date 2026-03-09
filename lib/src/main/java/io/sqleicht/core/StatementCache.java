@@ -6,7 +6,7 @@ import java.lang.foreign.MemorySegment;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-public final class StatementCache {
+final class StatementCache {
   private final Arena arena;
   private final MemorySegment db;
   private final int maxSize;
@@ -29,7 +29,7 @@ public final class StatementCache {
         };
   }
 
-  public MemorySegment acquire(String sql) throws SQLeichtException {
+  MemorySegment acquire(String sql) throws SQLeichtException {
     if (maxSize > 0) {
       MemorySegment stmt = cache.remove(sql);
       if (stmt != null) {
@@ -39,7 +39,7 @@ public final class StatementCache {
     return SQLiteNative.prepare(arena, db, sql);
   }
 
-  public void release(String sql, MemorySegment stmt) {
+  void release(String sql, MemorySegment stmt) {
     if (maxSize == 0) {
       SQLiteNative.finalizeStmt(stmt);
       return;
@@ -57,7 +57,7 @@ public final class StatementCache {
     }
   }
 
-  public void close() {
+  void close() {
     for (MemorySegment stmt : cache.values()) {
       SQLiteNative.finalizeStmt(stmt);
     }

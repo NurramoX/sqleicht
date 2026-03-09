@@ -3,7 +3,7 @@ package io.sqleicht.core;
 import io.sqleicht.ffi.SQLiteNative;
 import java.lang.foreign.MemorySegment;
 
-public class SQLeichtException extends Exception {
+public final class SQLeichtException extends Exception {
   private final int errorCode;
   private final int extendedErrorCode;
 

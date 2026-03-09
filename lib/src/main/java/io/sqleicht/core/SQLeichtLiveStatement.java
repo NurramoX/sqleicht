@@ -1,11 +1,13 @@
 package io.sqleicht.core;
 
 import io.sqleicht.ffi.SQLiteNative;
+import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 
 public final class SQLeichtLiveStatement implements AutoCloseable {
   private final SQLiteConnectionHandle connection;
   private final SQLiteStatementHandle handle;
+  private Arena bindArena = Arena.ofConfined();
 
   SQLeichtLiveStatement(SQLiteConnectionHandle connection, SQLiteStatementHandle handle) {
     this.connection = connection;
@@ -28,12 +30,12 @@ public final class SQLeichtLiveStatement implements AutoCloseable {
   }
 
   public SQLeichtLiveStatement bindText(int index, String value) throws SQLeichtException {
-    SQLiteNative.bindText(connection.arena(), handle.stmt(), index, value);
+    SQLiteNative.bindText(bindArena, handle.stmt(), index, value);
     return this;
   }
 
   public SQLeichtLiveStatement bindBlob(int index, byte[] value) throws SQLeichtException {
-    SQLiteNative.bindBlob(connection.arena(), handle.stmt(), index, value);
+    SQLiteNative.bindBlob(bindArena, handle.stmt(), index, value);
     return this;
   }
 
@@ -50,6 +52,8 @@ public final class SQLeichtLiveStatement implements AutoCloseable {
   public void reset() throws SQLeichtException {
     SQLiteNative.reset(handle.stmt());
     SQLiteNative.clearBindings(handle.stmt());
+    bindArena.close();
+    bindArena = Arena.ofConfined();
   }
 
   public int columnInt(int col) {
@@ -98,6 +102,7 @@ public final class SQLeichtLiveStatement implements AutoCloseable {
 
   @Override
   public void close() {
+    bindArena.close();
     handle.close();
   }
 }

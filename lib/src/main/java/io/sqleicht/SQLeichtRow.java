@@ -14,7 +14,7 @@ public final class SQLeichtRow {
   private final int[] columnTypes;
   private final Map<String, Integer> nameIndex;
 
-  SQLeichtRow(Object[] values, int[] columnTypes, Map<String, Integer> nameIndex) {
+  public SQLeichtRow(Object[] values, int[] columnTypes, Map<String, Integer> nameIndex) {
     this.values = values;
     this.columnTypes = columnTypes;
     this.nameIndex = nameIndex;

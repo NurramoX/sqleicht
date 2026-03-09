@@ -1,4 +1,4 @@
-package io.sqleicht.ffi;
+package io.sqleicht.core;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -6,12 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.sqleicht.core.SQLeichtException;
-import io.sqleicht.core.SQLiteColumnType;
-import io.sqleicht.core.SQLiteConnectionHandle;
-import io.sqleicht.core.SQLiteOpenFlag;
-import io.sqleicht.core.SQLiteResultCode;
-import io.sqleicht.core.SQLiteStatementHandle;
+import io.sqleicht.ffi.SQLiteNative;
 import java.lang.foreign.MemorySegment;
 import org.junit.jupiter.api.Test;
 

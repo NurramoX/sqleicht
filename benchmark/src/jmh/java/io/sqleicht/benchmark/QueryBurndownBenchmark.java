@@ -2,17 +2,8 @@ package io.sqleicht.benchmark;
 
 import io.sqleicht.SQLeicht;
 import io.sqleicht.SQLeichtConfig;
-import io.sqleicht.core.SQLiteColumnType;
-import io.sqleicht.core.SQLiteResultCode;
-import io.sqleicht.ffi.SQLiteNative;
-import java.lang.foreign.Arena;
-import java.lang.foreign.MemorySegment;
 import java.sql.Connection;
 import java.sql.DriverManager;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -31,14 +22,10 @@ import org.openjdk.jmh.annotations.Warmup;
 /**
  * Query burndown chart: isolates each layer of overhead in db.query().
  *
- * <p>Each benchmark adds one layer of ceremony on top of the previous one, showing exactly where
- * the time goes.
- *
  * <pre>
- *   Step 1: JDBC baseline          — raw JNI, returns String
- *   Step 2: sqleicht raw submit    — semaphore + lock + FFM prepare/step/columnText
- *   Step 3: sqleicht eager query   — + column names, row objects, HashMap (simulates optimized query)
- *   Step 4: sqleicht current query — + result arena, MemorySegment copy, Cleaner, double-copy on getText
+ *   Step 1: JDBC baseline            — raw JNI, returns String
+ *   Step 2: sqleicht LiveStatement   — pool + FFM prepare/bind/step/columnText (no row objects)
+ *   Step 3: sqleicht query()         — full path: pool + stmt cache + row objects + HashMap
  * </pre>
  */
 @BenchmarkMode(Mode.Throughput)
@@ -99,88 +86,27 @@ public class QueryBurndownBenchmark {
     }
   }
 
-  // ─── Step 2: sqleicht raw submit ────────────────────────────
-  // Semaphore + lock + FFM prepare/bind/step/columnText/finalize.
-  // Returns String directly. No row objects, no result arena.
+  // ─── Step 2: sqleicht LiveStatement ───────────────────────────
+  // Pool acquire + FFM prepare/bind/step/columnText + finalize.
+  // No row objects, no HashMap, no statement cache.
 
   @Benchmark
-  public String step2_rawSubmit() throws Exception {
+  public String step2_liveStatement() throws Exception {
     return db.submit(
         conn -> {
-          try (var arena = Arena.ofConfined()) {
-            MemorySegment dbH = conn.db();
-            MemorySegment stmt = SQLiteNative.prepare(arena, dbH, SQL);
-            try {
-              SQLiteNative.bindInt(stmt, 1, rng.nextInt(1000));
-              SQLiteNative.step(stmt);
-              return SQLiteNative.columnText(stmt, 0);
-            } finally {
-              SQLiteNative.finalizeStmt(stmt);
-            }
+          try (var stmt = conn.prepare(SQL)) {
+            stmt.bindInt(1, rng.nextInt(1000));
+            stmt.step();
+            return stmt.columnText(0);
           }
         });
   }
 
-  // ─── Step 3: sqleicht eager query (optimized) ───────────────
-  // Same as raw submit + column names + HashMap + SQLeichtRow objects.
-  // Still returns String directly — no result arena, no double-copy.
-  // This is what query() COULD look like after optimization.
+  // ─── Step 3: sqleicht query() ─────────────────────────────────
+  // Full ceremony: pool + statement cache + column names + HashMap + row objects.
 
   @Benchmark
-  public String step3_eagerQuery() throws Exception {
-    return db.submit(
-        conn -> {
-          try (var arena = Arena.ofConfined()) {
-            MemorySegment dbH = conn.db();
-            MemorySegment stmt = SQLiteNative.prepare(arena, dbH, SQL);
-            try {
-              SQLiteNative.bindInt(stmt, 1, rng.nextInt(1000));
-
-              int colCount = SQLiteNative.columnCount(stmt);
-
-              String[] columnNames = new String[colCount];
-              for (int i = 0; i < colCount; i++) {
-                columnNames[i] = SQLiteNative.columnName(stmt, i);
-              }
-
-              Map<String, Integer> nameIndex = new HashMap<>(colCount);
-              for (int i = 0; i < colCount; i++) {
-                nameIndex.put(columnNames[i], i);
-              }
-
-              List<Object[]> rows = new ArrayList<>();
-              int[] columnTypes = new int[colCount];
-
-              while (SQLiteNative.step(stmt) == SQLiteResultCode.ROW.code()) {
-                Object[] values = new Object[colCount];
-                for (int c = 0; c < colCount; c++) {
-                  columnTypes[c] = SQLiteNative.columnType(stmt, c);
-                  values[c] =
-                      switch (columnTypes[c]) {
-                        case SQLiteColumnType.INTEGER -> SQLiteNative.columnLong(stmt, c);
-                        case SQLiteColumnType.FLOAT -> SQLiteNative.columnDouble(stmt, c);
-                        case SQLiteColumnType.TEXT -> SQLiteNative.columnText(stmt, c);
-                        case SQLiteColumnType.BLOB -> SQLiteNative.columnBlob(stmt, c);
-                        default -> null;
-                      };
-                }
-                rows.add(values);
-              }
-
-              return (String) rows.getFirst()[0];
-            } finally {
-              SQLiteNative.finalizeStmt(stmt);
-            }
-          }
-        });
-  }
-
-  // ─── Step 4: sqleicht current query() ───────────────────────
-  // The full ceremony: result arena + MemorySegment.copy + Cleaner +
-  // double-copy on getText() (segment → byte[] → String).
-
-  @Benchmark
-  public String step4_currentQuery() throws Exception {
+  public String step3_query() throws Exception {
     try (var rows = db.query(SQL, rng.nextInt(1000))) {
       return rows.get(0).getText(0);
     }

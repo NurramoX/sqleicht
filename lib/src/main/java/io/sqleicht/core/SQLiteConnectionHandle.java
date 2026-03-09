@@ -6,7 +6,7 @@ import java.lang.foreign.MemorySegment;
 
 public final class SQLiteConnectionHandle implements AutoCloseable {
   private final Arena arena;
-  private MemorySegment db;
+  private volatile MemorySegment db;
   private final StatementCache stmtCache;
 
   SQLiteConnectionHandle(Arena arena, MemorySegment db, StatementCache stmtCache) {
@@ -28,22 +28,22 @@ public final class SQLiteConnectionHandle implements AutoCloseable {
     }
   }
 
-  public MemorySegment db() {
+  MemorySegment db() {
     if (isClosed()) {
       throw new IllegalStateException("Connection is closed");
     }
     return db;
   }
 
-  public Arena arena() {
+  Arena arena() {
     return arena;
   }
 
-  public StatementCache stmtCache() {
+  StatementCache stmtCache() {
     return stmtCache;
   }
 
-  public boolean isClosed() {
+  boolean isClosed() {
     return db == null;
   }
 

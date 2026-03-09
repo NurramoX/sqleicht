@@ -23,7 +23,7 @@ class HousekeepingTest {
     try (var db = SQLeicht.create(tempDb(), config)) {
       db.execute("CREATE TABLE t (id INTEGER)");
 
-      long identity1 = db.submit(conn -> conn.db().address());
+      int identity1 = db.submit(conn -> conn.connectionId());
 
       db.update("INSERT INTO t VALUES (?)", 1);
       db.update("INSERT INTO t VALUES (?)", 2);
@@ -90,14 +90,14 @@ class HousekeepingTest {
       db.update("INSERT INTO t VALUES (?)", 1);
 
       // Record initial connection address
-      long address1 = db.submit(conn -> conn.db().address());
+      int address1 = db.submit(conn -> conn.connectionId());
 
       // Wait for idle close
       Thread.sleep(2_500);
 
       // After idle close + reopen, the connection handle should be different.
       // File-based SQLite allocates a new sqlite3* handle on reopen.
-      long address2 = db.submit(conn -> conn.db().address());
+      int address2 = db.submit(conn -> conn.connectionId());
 
       // With file-based DB, reopened connection gets a fresh handle
       // (unlike memory reuse which might give the same address).
@@ -117,7 +117,7 @@ class HousekeepingTest {
     try (var db = SQLeicht.create(tempDb(), config)) {
       db.execute("CREATE TABLE t (id INTEGER)");
 
-      long identity1 = db.submit(conn -> conn.db().address());
+      int identity1 = db.submit(conn -> conn.connectionId());
 
       // Keep the connection busy — task every 300ms for 2 seconds
       // Each task resets lastAccessed, so idle timeout never fires
@@ -126,7 +126,7 @@ class HousekeepingTest {
         db.update("INSERT INTO t VALUES (?)", i);
       }
 
-      long identity2 = db.submit(conn -> conn.db().address());
+      int identity2 = db.submit(conn -> conn.connectionId());
 
       assertEquals(
           identity1, identity2, "Connection should NOT have been recycled during activity");
@@ -141,11 +141,11 @@ class HousekeepingTest {
     try (var db = SQLeicht.create(tempDb(), config)) {
       db.execute("CREATE TABLE t (id INTEGER)");
 
-      long identity1 = db.submit(conn -> conn.db().address());
+      int identity1 = db.submit(conn -> conn.connectionId());
 
       Thread.sleep(2_500);
 
-      long identity2 = db.submit(conn -> conn.db().address());
+      int identity2 = db.submit(conn -> conn.connectionId());
       assertEquals(
           identity1, identity2, "Connection should NOT be recycled when idle timeout is 0");
     }
@@ -159,11 +159,11 @@ class HousekeepingTest {
     try (var db = SQLeicht.create(tempDb(), config)) {
       db.execute("CREATE TABLE t (id INTEGER)");
 
-      long identity1 = db.submit(conn -> conn.db().address());
+      int identity1 = db.submit(conn -> conn.connectionId());
 
       Thread.sleep(2_500);
 
-      long identity2 = db.submit(conn -> conn.db().address());
+      int identity2 = db.submit(conn -> conn.connectionId());
       assertEquals(
           identity1, identity2, "Idle timeout should be auto-disabled when >= maxLifetime");
     }

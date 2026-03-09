@@ -212,6 +212,18 @@ public final class SQLeichtConfig {
     if (mmapSize < 0) {
       throw new IllegalArgumentException("mmapSize must be >= 0, was " + mmapSize);
     }
+    validatePragmaValue("journalMode", journalMode);
+    validatePragmaValue("synchronous", synchronous);
+    validatePragmaValue("autoVacuum", autoVacuum);
+    validatePragmaValue("tempStore", tempStore);
+  }
+
+  private static void validatePragmaValue(String name, String value) {
+    if (value == null) return;
+    if (!value.matches("[A-Za-z_]+")) {
+      throw new IllegalArgumentException(
+          name + " must be a simple alphanumeric PRAGMA value, was '" + value + "'");
+    }
   }
 
   private void checkNotSealed() {

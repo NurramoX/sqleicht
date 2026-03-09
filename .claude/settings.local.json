@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(crocodocs summary:*)",
+      "Bash(crocodocs tree:*)",
+      "Bash(crocodocs read-files:*)",
+      "Bash(crocodocs grep:*)",
+      "Bash(crocodocs tags:*)",
+      "Bash(command:*)",
+      "Bash(crocodocs:*)",
+      "Bash(PYTHONIOENCODING=utf-8 crocodocs map:*)",
+      "Bash(PYTHONIOENCODING=utf-8 crocodocs tree:*)",
+      "Bash(PYTHONIOENCODING=utf-8 crocodocs symbols:*)",
+      "Bash(PYTHONIOENCODING=utf-8 crocodocs read-files:*)",
+      "WebSearch",
+      "Bash(./gradlew spotlessApply:*)",
+      "Bash(./gradlew compileTestJava:*)",
+      "WebFetch(domain:sqlite.org)"
+    ]
+  }
+}

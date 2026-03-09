@@ -57,10 +57,9 @@ public final class SQLeicht implements AutoCloseable {
   public void forEach(String sql, RowConsumer consumer, Object... params) throws SQLeichtException {
     executor.submit(
         conn -> {
-          try (var arena = Arena.ofConfined()) {
-            MemorySegment db = conn.db();
-            MemorySegment stmt = SQLiteNative.prepare(arena, db, sql);
-            try {
+          MemorySegment stmt = conn.stmtCache().acquire(sql);
+          try {
+            try (var arena = Arena.ofConfined()) {
               bindParams(arena, stmt, params);
 
               int colCount = SQLiteNative.columnCount(stmt);
@@ -89,9 +88,9 @@ public final class SQLeicht implements AutoCloseable {
 
                 consumer.accept(new SQLeichtRow(values, columnTypes, nameIndex));
               }
-            } finally {
-              SQLiteNative.finalizeStmt(stmt);
             }
+          } finally {
+            conn.stmtCache().release(sql, stmt);
           }
           return null;
         });
@@ -163,16 +162,15 @@ public final class SQLeicht implements AutoCloseable {
   long executeUpdate(String sql, Object[] params) throws SQLeichtException {
     return executor.submit(
         conn -> {
-          try (var arena = Arena.ofConfined()) {
-            MemorySegment db = conn.db();
-            MemorySegment stmt = SQLiteNative.prepare(arena, db, sql);
-            try {
+          MemorySegment stmt = conn.stmtCache().acquire(sql);
+          try {
+            try (var arena = Arena.ofConfined()) {
               bindParams(arena, stmt, params);
               SQLiteNative.step(stmt);
-              return SQLiteNative.changes(db);
-            } finally {
-              SQLiteNative.finalizeStmt(stmt);
             }
+            return SQLiteNative.changes(conn.db());
+          } finally {
+            conn.stmtCache().release(sql, stmt);
           }
         });
   }
@@ -180,59 +178,51 @@ public final class SQLeicht implements AutoCloseable {
   SQLeichtRows executeQuery(String sql, Object[] params) throws SQLeichtException {
     return executor.submit(
         conn -> {
-          Arena resultArena = Arena.ofShared();
+          MemorySegment stmt = conn.stmtCache().acquire(sql);
           try {
-            try (var taskArena = Arena.ofConfined()) {
-              MemorySegment db = conn.db();
-              MemorySegment stmt = SQLiteNative.prepare(taskArena, db, sql);
-              try {
-                bindParams(taskArena, stmt, params);
+            try (var arena = Arena.ofConfined()) {
+              bindParams(arena, stmt, params);
 
-                int colCount = SQLiteNative.columnCount(stmt);
+              int colCount = SQLiteNative.columnCount(stmt);
 
-                // Read column names and types on first row
-                String[] columnNames = new String[colCount];
-                for (int i = 0; i < colCount; i++) {
-                  columnNames[i] = SQLiteNative.columnName(stmt, i);
-                }
+              String[] columnNames = new String[colCount];
+              for (int i = 0; i < colCount; i++) {
+                columnNames[i] = SQLiteNative.columnName(stmt, i);
+              }
 
-                Map<String, Integer> nameIndex = new HashMap<>(colCount);
-                for (int i = 0; i < colCount; i++) {
-                  nameIndex.put(columnNames[i], i);
-                }
+              Map<String, Integer> nameIndex = new HashMap<>(colCount);
+              for (int i = 0; i < colCount; i++) {
+                nameIndex.put(columnNames[i], i);
+              }
 
-                List<SQLeichtRow> rows = new ArrayList<>();
-                int[] columnTypes = null;
+              List<SQLeichtRow> rows = new ArrayList<>();
+              int[] columnTypes = null;
 
-                while (SQLiteNative.step(stmt) == SQLiteResultCode.ROW.code()) {
-                  if (columnTypes == null) {
-                    columnTypes = new int[colCount];
-                    for (int i = 0; i < colCount; i++) {
-                      columnTypes[i] = SQLiteNative.columnType(stmt, i);
-                    }
-                  }
-
-                  Object[] values = new Object[colCount];
-                  for (int c = 0; c < colCount; c++) {
-                    int type = SQLiteNative.columnType(stmt, c);
-                    values[c] = readColumn(resultArena, stmt, c, type);
-                  }
-
-                  rows.add(new SQLeichtRow(values, columnTypes, nameIndex));
-                }
-
+              while (SQLiteNative.step(stmt) == SQLiteResultCode.ROW.code()) {
                 if (columnTypes == null) {
                   columnTypes = new int[colCount];
+                  for (int i = 0; i < colCount; i++) {
+                    columnTypes[i] = SQLiteNative.columnType(stmt, i);
+                  }
                 }
 
-                return new SQLeichtRows(resultArena, rows, columnNames, columnTypes, nameIndex);
-              } finally {
-                SQLiteNative.finalizeStmt(stmt);
+                Object[] values = new Object[colCount];
+                for (int c = 0; c < colCount; c++) {
+                  int type = SQLiteNative.columnType(stmt, c);
+                  values[c] = readColumnEager(stmt, c, type);
+                }
+
+                rows.add(new SQLeichtRow(values, columnTypes, nameIndex));
               }
+
+              if (columnTypes == null) {
+                columnTypes = new int[colCount];
+              }
+
+              return new SQLeichtRows(rows, columnNames, columnTypes, nameIndex);
             }
-          } catch (Throwable t) {
-            resultArena.close();
-            throw t;
+          } finally {
+            conn.stmtCache().release(sql, stmt);
           }
         });
   }
@@ -254,24 +244,12 @@ public final class SQLeicht implements AutoCloseable {
     };
   }
 
-  static Object readColumn(Arena resultArena, MemorySegment stmt, int col, int type) {
+  static Object readColumnEager(MemorySegment stmt, int col, int type) {
     return switch (type) {
       case SQLiteColumnType.INTEGER -> SQLiteNative.columnLong(stmt, col);
       case SQLiteColumnType.FLOAT -> SQLiteNative.columnDouble(stmt, col);
-      case SQLiteColumnType.TEXT -> {
-        MemorySegment src = SQLiteNative.columnTextSegment(stmt, col);
-        if (src.equals(MemorySegment.NULL)) yield null;
-        MemorySegment dst = resultArena.allocate(src.byteSize());
-        MemorySegment.copy(src, 0, dst, 0, src.byteSize());
-        yield dst;
-      }
-      case SQLiteColumnType.BLOB -> {
-        MemorySegment src = SQLiteNative.columnBlobSegment(stmt, col);
-        if (src.equals(MemorySegment.NULL)) yield null;
-        MemorySegment dst = resultArena.allocate(src.byteSize());
-        MemorySegment.copy(src, 0, dst, 0, src.byteSize());
-        yield dst;
-      }
+      case SQLiteColumnType.TEXT -> SQLiteNative.columnText(stmt, col);
+      case SQLiteColumnType.BLOB -> SQLiteNative.columnBlob(stmt, col);
       case SQLiteColumnType.NULL -> null;
       default -> null;
     };

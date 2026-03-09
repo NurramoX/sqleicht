@@ -32,6 +32,10 @@ public final class SQLeichtConnection {
     return handle.arena();
   }
 
+  public StatementCache stmtCache() {
+    return handle.stmtCache();
+  }
+
   public MemorySegment db() {
     return handle.db();
   }

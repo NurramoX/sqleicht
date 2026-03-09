@@ -35,7 +35,7 @@ public class ZeroCopyBenchmark {
 
   @Setup(Level.Trial)
   public void setup() throws SQLeichtException {
-    conn = SQLiteConnectionHandle.open(":memory:", SQLiteOpenFlag.DEFAULT);
+    conn = SQLiteConnectionHandle.open(":memory:", SQLiteOpenFlag.DEFAULT, 64);
 
     SQLiteNative.exec(
         conn.arena(),

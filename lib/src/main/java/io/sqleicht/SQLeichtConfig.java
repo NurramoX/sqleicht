@@ -5,9 +5,21 @@ public final class SQLeichtConfig {
   private long maxLifetimeMs = 30 * 60 * 1000L;
   private int busyTimeoutMs = 5000;
   private String journalMode = "WAL";
+  private String synchronous = "NORMAL";
+  private int cacheSize = -20000;
+  private boolean foreignKeys = true;
+  private String autoVacuum = "NONE";
+  private String tempStore = "DEFAULT";
+  private long mmapSize = 2_147_483_648L;
+  private int pageSize = 8192;
   private String connectionInitSql;
+  private long idleTimeoutMs = 10 * 60 * 1000L;
+  private int statementCacheSize = 64;
   private long connectionTimeoutMs = 30_000L;
+  long housekeepingIntervalMs = 30_000L;
   private volatile boolean sealed;
+
+  // --- Pool settings ---
 
   public SQLeichtConfig threadCount(int threadCount) {
     checkNotSealed();
@@ -21,6 +33,26 @@ public final class SQLeichtConfig {
     return this;
   }
 
+  public SQLeichtConfig idleTimeoutMs(long idleTimeoutMs) {
+    checkNotSealed();
+    this.idleTimeoutMs = idleTimeoutMs;
+    return this;
+  }
+
+  public SQLeichtConfig connectionTimeoutMs(long connectionTimeoutMs) {
+    checkNotSealed();
+    this.connectionTimeoutMs = connectionTimeoutMs;
+    return this;
+  }
+
+  public SQLeichtConfig statementCacheSize(int statementCacheSize) {
+    checkNotSealed();
+    this.statementCacheSize = statementCacheSize;
+    return this;
+  }
+
+  // --- SQLite connection settings ---
+
   public SQLeichtConfig busyTimeoutMs(int busyTimeoutMs) {
     checkNotSealed();
     this.busyTimeoutMs = busyTimeoutMs;
@@ -33,17 +65,55 @@ public final class SQLeichtConfig {
     return this;
   }
 
+  public SQLeichtConfig synchronous(String synchronous) {
+    checkNotSealed();
+    this.synchronous = synchronous;
+    return this;
+  }
+
+  public SQLeichtConfig cacheSize(int cacheSize) {
+    checkNotSealed();
+    this.cacheSize = cacheSize;
+    return this;
+  }
+
+  public SQLeichtConfig foreignKeys(boolean foreignKeys) {
+    checkNotSealed();
+    this.foreignKeys = foreignKeys;
+    return this;
+  }
+
+  public SQLeichtConfig autoVacuum(String autoVacuum) {
+    checkNotSealed();
+    this.autoVacuum = autoVacuum;
+    return this;
+  }
+
+  public SQLeichtConfig tempStore(String tempStore) {
+    checkNotSealed();
+    this.tempStore = tempStore;
+    return this;
+  }
+
+  public SQLeichtConfig mmapSize(long mmapSize) {
+    checkNotSealed();
+    this.mmapSize = mmapSize;
+    return this;
+  }
+
+  public SQLeichtConfig pageSize(int pageSize) {
+    checkNotSealed();
+    this.pageSize = pageSize;
+    return this;
+  }
+
   public SQLeichtConfig connectionInitSql(String connectionInitSql) {
     checkNotSealed();
     this.connectionInitSql = connectionInitSql;
     return this;
   }
 
-  public SQLeichtConfig connectionTimeoutMs(long connectionTimeoutMs) {
-    checkNotSealed();
-    this.connectionTimeoutMs = connectionTimeoutMs;
-    return this;
-  }
+  // --- Getters ---
 
   public int threadCount() {
     return threadCount;
@@ -61,8 +131,48 @@ public final class SQLeichtConfig {
     return journalMode;
   }
 
+  public String synchronous() {
+    return synchronous;
+  }
+
+  public int cacheSize() {
+    return cacheSize;
+  }
+
+  public boolean foreignKeys() {
+    return foreignKeys;
+  }
+
+  public String autoVacuum() {
+    return autoVacuum;
+  }
+
+  public String tempStore() {
+    return tempStore;
+  }
+
+  public long mmapSize() {
+    return mmapSize;
+  }
+
+  public int pageSize() {
+    return pageSize;
+  }
+
   public String connectionInitSql() {
     return connectionInitSql;
+  }
+
+  public long idleTimeoutMs() {
+    return idleTimeoutMs;
+  }
+
+  public long housekeepingIntervalMs() {
+    return housekeepingIntervalMs;
+  }
+
+  public int statementCacheSize() {
+    return statementCacheSize;
   }
 
   public long connectionTimeoutMs() {
@@ -80,9 +190,27 @@ public final class SQLeichtConfig {
     if (maxLifetimeMs < 30_000) {
       throw new IllegalArgumentException("maxLifetimeMs must be >= 30000, was " + maxLifetimeMs);
     }
+    if (idleTimeoutMs != 0 && idleTimeoutMs < 1_000) {
+      throw new IllegalArgumentException(
+          "idleTimeoutMs must be 0 (disabled) or >= 1000, was " + idleTimeoutMs);
+    }
+    if (idleTimeoutMs != 0 && idleTimeoutMs >= maxLifetimeMs) {
+      idleTimeoutMs = 0; // disable — idle timeout >= maxLifetime is meaningless
+    }
+    if (statementCacheSize < 0) {
+      throw new IllegalArgumentException(
+          "statementCacheSize must be >= 0, was " + statementCacheSize);
+    }
     if (connectionTimeoutMs < 250) {
       throw new IllegalArgumentException(
           "connectionTimeoutMs must be >= 250, was " + connectionTimeoutMs);
+    }
+    if (pageSize < 512 || pageSize > 65536 || (pageSize & (pageSize - 1)) != 0) {
+      throw new IllegalArgumentException(
+          "pageSize must be a power of 2 between 512 and 65536, was " + pageSize);
+    }
+    if (mmapSize < 0) {
+      throw new IllegalArgumentException("mmapSize must be >= 0, was " + mmapSize);
     }
   }
 

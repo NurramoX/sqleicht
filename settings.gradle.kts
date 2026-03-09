@@ -12,3 +12,4 @@ plugins {
 
 rootProject.name = "sqleicht"
 include("lib")
+include("benchmark")

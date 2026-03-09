@@ -15,7 +15,10 @@
       "WebSearch",
       "Bash(./gradlew spotlessApply:*)",
       "Bash(./gradlew compileTestJava:*)",
-      "WebFetch(domain:sqlite.org)"
+      "WebFetch(domain:sqlite.org)",
+      "Bash(where crocodocs:*)",
+      "Bash(./gradlew :lib:test:*)",
+      "Bash(./gradlew :lib:cleanTest:*)"
     ]
   }
 }

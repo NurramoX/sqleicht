@@ -24,80 +24,71 @@ public final class SQLeichtTransaction {
   }
 
   public long update(String sql, Object... params) throws SQLeichtException {
-    try (var arena = Arena.ofConfined()) {
-      MemorySegment db = conn.db();
-      MemorySegment stmt = SQLiteNative.prepare(arena, db, sql);
-      try {
+    MemorySegment stmt = conn.stmtCache().acquire(sql);
+    try {
+      try (var arena = Arena.ofConfined()) {
         SQLeicht.bindParams(arena, stmt, params);
         SQLiteNative.step(stmt);
-        return SQLiteNative.changes(db);
-      } finally {
-        SQLiteNative.finalizeStmt(stmt);
       }
+      return SQLiteNative.changes(conn.db());
+    } finally {
+      conn.stmtCache().release(sql, stmt);
     }
   }
 
   public SQLeichtRows query(String sql, Object... params) throws SQLeichtException {
-    Arena resultArena = Arena.ofShared();
+    MemorySegment stmt = conn.stmtCache().acquire(sql);
     try {
-      try (var taskArena = Arena.ofConfined()) {
-        MemorySegment db = conn.db();
-        MemorySegment stmt = SQLiteNative.prepare(taskArena, db, sql);
-        try {
-          SQLeicht.bindParams(taskArena, stmt, params);
+      try (var arena = Arena.ofConfined()) {
+        SQLeicht.bindParams(arena, stmt, params);
 
-          int colCount = SQLiteNative.columnCount(stmt);
+        int colCount = SQLiteNative.columnCount(stmt);
 
-          String[] columnNames = new String[colCount];
-          for (int i = 0; i < colCount; i++) {
-            columnNames[i] = SQLiteNative.columnName(stmt, i);
-          }
+        String[] columnNames = new String[colCount];
+        for (int i = 0; i < colCount; i++) {
+          columnNames[i] = SQLiteNative.columnName(stmt, i);
+        }
 
-          Map<String, Integer> nameIndex = new HashMap<>(colCount);
-          for (int i = 0; i < colCount; i++) {
-            nameIndex.put(columnNames[i], i);
-          }
+        Map<String, Integer> nameIndex = new HashMap<>(colCount);
+        for (int i = 0; i < colCount; i++) {
+          nameIndex.put(columnNames[i], i);
+        }
 
-          List<SQLeichtRow> rows = new ArrayList<>();
-          int[] columnTypes = null;
+        List<SQLeichtRow> rows = new ArrayList<>();
+        int[] columnTypes = null;
 
-          while (SQLiteNative.step(stmt) == SQLiteResultCode.ROW.code()) {
-            if (columnTypes == null) {
-              columnTypes = new int[colCount];
-              for (int i = 0; i < colCount; i++) {
-                columnTypes[i] = SQLiteNative.columnType(stmt, i);
-              }
-            }
-
-            Object[] values = new Object[colCount];
-            for (int c = 0; c < colCount; c++) {
-              int type = SQLiteNative.columnType(stmt, c);
-              values[c] = SQLeicht.readColumn(resultArena, stmt, c, type);
-            }
-
-            rows.add(new SQLeichtRow(values, columnTypes, nameIndex));
-          }
-
+        while (SQLiteNative.step(stmt) == SQLiteResultCode.ROW.code()) {
           if (columnTypes == null) {
             columnTypes = new int[colCount];
+            for (int i = 0; i < colCount; i++) {
+              columnTypes[i] = SQLiteNative.columnType(stmt, i);
+            }
           }
 
-          return new SQLeichtRows(resultArena, rows, columnNames, columnTypes, nameIndex);
-        } finally {
-          SQLiteNative.finalizeStmt(stmt);
+          Object[] values = new Object[colCount];
+          for (int c = 0; c < colCount; c++) {
+            int type = SQLiteNative.columnType(stmt, c);
+            values[c] = SQLeicht.readColumnEager(stmt, c, type);
+          }
+
+          rows.add(new SQLeichtRow(values, columnTypes, nameIndex));
         }
+
+        if (columnTypes == null) {
+          columnTypes = new int[colCount];
+        }
+
+        return new SQLeichtRows(rows, columnNames, columnTypes, nameIndex);
       }
-    } catch (Throwable t) {
-      resultArena.close();
-      throw t;
+    } finally {
+      conn.stmtCache().release(sql, stmt);
     }
   }
 
   public void forEach(String sql, RowConsumer consumer, Object... params) throws SQLeichtException {
-    try (var arena = Arena.ofConfined()) {
-      MemorySegment db = conn.db();
-      MemorySegment stmt = SQLiteNative.prepare(arena, db, sql);
-      try {
+    MemorySegment stmt = conn.stmtCache().acquire(sql);
+    try {
+      try (var arena = Arena.ofConfined()) {
         SQLeicht.bindParams(arena, stmt, params);
 
         int colCount = SQLiteNative.columnCount(stmt);
@@ -126,31 +117,29 @@ public final class SQLeichtTransaction {
 
           consumer.accept(new SQLeichtRow(values, columnTypes, nameIndex));
         }
-      } finally {
-        SQLiteNative.finalizeStmt(stmt);
       }
+    } finally {
+      conn.stmtCache().release(sql, stmt);
     }
   }
 
   public long batch(String sql, Iterator<Object[]> rows) throws SQLeichtException {
     long totalChanges = 0;
-    try (var arena = Arena.ofConfined()) {
-      MemorySegment db = conn.db();
-      MemorySegment stmt = SQLiteNative.prepare(arena, db, sql);
-      try {
-        while (rows.hasNext()) {
-          Object[] params = rows.next();
-          try (var bindArena = Arena.ofConfined()) {
-            SQLeicht.bindParams(bindArena, stmt, params);
-            SQLiteNative.step(stmt);
-            totalChanges += SQLiteNative.changes(db);
-          }
-          SQLiteNative.reset(stmt);
-          SQLiteNative.clearBindings(stmt);
+    MemorySegment db = conn.db();
+    MemorySegment stmt = conn.stmtCache().acquire(sql);
+    try {
+      while (rows.hasNext()) {
+        Object[] params = rows.next();
+        try (var bindArena = Arena.ofConfined()) {
+          SQLeicht.bindParams(bindArena, stmt, params);
+          SQLiteNative.step(stmt);
+          totalChanges += SQLiteNative.changes(db);
         }
-      } finally {
-        SQLiteNative.finalizeStmt(stmt);
+        SQLiteNative.reset(stmt);
+        SQLiteNative.clearBindings(stmt);
       }
+    } finally {
+      conn.stmtCache().release(sql, stmt);
     }
     return totalChanges;
   }

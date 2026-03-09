@@ -120,12 +120,9 @@ class LoadTest {
       latch.await();
 
       assertEquals(0, errors.get(), "Some tasks failed");
-      assertEquals(2, ffmThreads.size(), "Expected exactly 2 FFM threads");
 
-      for (Thread t : ffmThreads) {
-        assertFalse(t.isVirtual());
-        assertTrue(t.getName().startsWith("sqleicht-ffi-"));
-      }
+      // With direct execution, tasks run on the calling virtual threads
+      assertTrue(ffmThreads.size() > 1, "Multiple virtual threads should have handled tasks");
 
       try (var rows = db.query("SELECT COUNT(*) FROM t")) {
         assertEquals(taskCount, rows.get(0).getInt(0));
@@ -143,7 +140,6 @@ class LoadTest {
       int writerCount = 500;
       CountDownLatch latch = new CountDownLatch(writerCount);
       AtomicInteger errors = new AtomicInteger();
-      Set<Thread> ffmThreads = ConcurrentHashMap.newKeySet();
 
       for (int i = 0; i < writerCount; i++) {
         final int id = i;
@@ -153,7 +149,6 @@ class LoadTest {
                   try {
                     db.submit(
                         conn -> {
-                          ffmThreads.add(Thread.currentThread());
                           conn.execute("INSERT INTO t VALUES (" + id + ", 'writer-" + id + "')");
                           return null;
                         });
@@ -168,7 +163,6 @@ class LoadTest {
       latch.await();
 
       assertEquals(0, errors.get(), "Some writers failed");
-      assertEquals(2, ffmThreads.size(), "Both worker threads handled writes");
 
       try (var rows = db.query("SELECT COUNT(*) FROM t")) {
         assertEquals(writerCount, rows.get(0).getInt(0));

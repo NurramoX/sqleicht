@@ -1,57 +1,61 @@
 package io.sqleicht.core;
 
+import io.sqleicht.SQLeichtConfig;
 import io.sqleicht.ffi.SQLiteNative;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
-import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
+import java.util.concurrent.locks.ReentrantLock;
 
 public final class ConnectionSlot {
-  static final int NOT_IN_USE = 0;
-  static final int IN_USE = 1;
-  static final int RESERVED = -2;
-  static final int REMOVED = -1;
-
-  private static final AtomicIntegerFieldUpdater<ConnectionSlot> STATE =
-      AtomicIntegerFieldUpdater.newUpdater(ConnectionSlot.class, "state");
-
+  private final ReentrantLock lock = new ReentrantLock();
   private final String path;
   private final int openFlags;
-  private final int busyTimeoutMs;
-  private final String journalMode;
-  private final String connectionInitSql;
+  private final SQLeichtConfig config;
 
-  volatile int state;
   volatile boolean evict;
   volatile long lastAccessed;
   volatile long createdAt;
 
   private SQLiteConnectionHandle connection;
 
-  public ConnectionSlot(
-      String path, int openFlags, int busyTimeoutMs, String journalMode, String connectionInitSql) {
+  public ConnectionSlot(String path, int openFlags, SQLeichtConfig config) {
     this.path = path;
     this.openFlags = openFlags;
-    this.busyTimeoutMs = busyTimeoutMs;
-    this.journalMode = journalMode;
-    this.connectionInitSql = connectionInitSql;
+    this.config = config;
   }
 
   public void openConnection() throws SQLeichtException {
-    connection = SQLiteConnectionHandle.open(path, openFlags);
+    connection = SQLiteConnectionHandle.open(path, openFlags, config.statementCacheSize());
     createdAt = System.nanoTime();
     lastAccessed = createdAt;
 
     Arena arena = connection.arena();
     MemorySegment db = connection.db();
 
-    SQLiteNative.busyTimeout(db, busyTimeoutMs);
+    // Page-level settings (only effective on new databases)
+    SQLiteNative.exec(arena, db, "PRAGMA page_size=" + config.pageSize());
+    SQLiteNative.exec(arena, db, "PRAGMA auto_vacuum=" + config.autoVacuum());
 
+    // Journal and sync
+    String journalMode = config.journalMode();
     if (journalMode != null && !journalMode.isEmpty()) {
       SQLiteNative.exec(arena, db, "PRAGMA journal_mode=" + journalMode);
     }
+    SQLiteNative.busyTimeout(db, config.busyTimeoutMs());
+    SQLiteNative.exec(arena, db, "PRAGMA synchronous=" + config.synchronous());
 
-    if (connectionInitSql != null && !connectionInitSql.isEmpty()) {
-      SQLiteNative.exec(arena, db, connectionInitSql);
+    // Cache and memory
+    SQLiteNative.exec(arena, db, "PRAGMA cache_size=" + config.cacheSize());
+    SQLiteNative.exec(arena, db, "PRAGMA mmap_size=" + config.mmapSize());
+    SQLiteNative.exec(arena, db, "PRAGMA temp_store=" + config.tempStore());
+
+    // Features
+    SQLiteNative.exec(arena, db, "PRAGMA foreign_keys=" + (config.foreignKeys() ? "ON" : "OFF"));
+
+    // User custom SQL (runs last so it can override anything)
+    String initSql = config.connectionInitSql();
+    if (initSql != null && !initSql.isEmpty()) {
+      SQLiteNative.exec(arena, db, initSql);
     }
   }
 
@@ -72,15 +76,15 @@ public final class ConnectionSlot {
     evict = false;
   }
 
+  public boolean isConnectionOpen() {
+    return connection != null && !connection.isClosed();
+  }
+
   public SQLiteConnectionHandle connection() {
     return connection;
   }
 
-  public boolean casState(int expect, int update) {
-    return STATE.compareAndSet(this, expect, update);
-  }
-
-  public int getState() {
-    return state;
+  public ReentrantLock lock() {
+    return lock;
   }
 }

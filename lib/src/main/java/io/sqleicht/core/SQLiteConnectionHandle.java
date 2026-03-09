@@ -7,17 +7,21 @@ import java.lang.foreign.MemorySegment;
 public final class SQLiteConnectionHandle implements AutoCloseable {
   private final Arena arena;
   private MemorySegment db;
+  private final StatementCache stmtCache;
 
-  SQLiteConnectionHandle(Arena arena, MemorySegment db) {
+  SQLiteConnectionHandle(Arena arena, MemorySegment db, StatementCache stmtCache) {
     this.arena = arena;
     this.db = db;
+    this.stmtCache = stmtCache;
   }
 
-  public static SQLiteConnectionHandle open(String filename, int flags) throws SQLeichtException {
-    Arena arena = Arena.ofConfined();
+  public static SQLiteConnectionHandle open(String filename, int flags, int stmtCacheSize)
+      throws SQLeichtException {
+    Arena arena = Arena.ofShared();
     try {
       MemorySegment db = SQLiteNative.open(arena, filename, flags);
-      return new SQLiteConnectionHandle(arena, db);
+      StatementCache cache = new StatementCache(arena, db, stmtCacheSize);
+      return new SQLiteConnectionHandle(arena, db, cache);
     } catch (Throwable t) {
       arena.close();
       throw t;
@@ -35,6 +39,10 @@ public final class SQLiteConnectionHandle implements AutoCloseable {
     return arena;
   }
 
+  public StatementCache stmtCache() {
+    return stmtCache;
+  }
+
   public boolean isClosed() {
     return db == null;
   }
@@ -44,6 +52,7 @@ public final class SQLiteConnectionHandle implements AutoCloseable {
     if (db != null) {
       MemorySegment toClose = db;
       db = null;
+      stmtCache.close();
       SQLiteNative.close(toClose);
       arena.close();
     }

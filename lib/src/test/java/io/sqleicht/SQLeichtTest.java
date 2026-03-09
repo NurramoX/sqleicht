@@ -633,12 +633,14 @@ class SQLeichtTest {
     db.execute("CREATE TABLE t (name TEXT)");
     db.update("INSERT INTO t VALUES (?)", "hello");
 
-    try (var rows = db.query("SELECT name FROM t")) {
-      MemorySegment seg = rows.get(0).getSegment(0);
-      assertNotNull(seg);
-      byte[] expected = "hello".getBytes(StandardCharsets.UTF_8);
-      byte[] actual = seg.toArray(ValueLayout.JAVA_BYTE);
-      assertArrayEquals(expected, actual);
-    }
+    db.forEach(
+        "SELECT name FROM t",
+        row -> {
+          MemorySegment seg = row.getSegment(0);
+          assertNotNull(seg);
+          byte[] expected = "hello".getBytes(StandardCharsets.UTF_8);
+          byte[] actual = seg.toArray(ValueLayout.JAVA_BYTE);
+          assertArrayEquals(expected, actual);
+        });
   }
 }

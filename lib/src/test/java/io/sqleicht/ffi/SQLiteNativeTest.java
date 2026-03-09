@@ -26,14 +26,14 @@ class SQLiteNativeTest {
 
   @Test
   void openAndCloseInMemoryDatabase() throws SQLeichtException {
-    try (var conn = SQLiteConnectionHandle.open(":memory:", SQLiteOpenFlag.DEFAULT)) {
+    try (var conn = SQLiteConnectionHandle.open(":memory:", SQLiteOpenFlag.DEFAULT, 64)) {
       assertNotNull(conn.db());
     }
   }
 
   @Test
   void createTableInsertAndSelect() throws SQLeichtException {
-    try (var conn = SQLiteConnectionHandle.open(":memory:", SQLiteOpenFlag.DEFAULT)) {
+    try (var conn = SQLiteConnectionHandle.open(":memory:", SQLiteOpenFlag.DEFAULT, 64)) {
       // Create table
       SQLiteNative.exec(
           conn.arena(),
@@ -102,7 +102,7 @@ class SQLiteNativeTest {
 
   @Test
   void blobRoundTrip() throws SQLeichtException {
-    try (var conn = SQLiteConnectionHandle.open(":memory:", SQLiteOpenFlag.DEFAULT)) {
+    try (var conn = SQLiteConnectionHandle.open(":memory:", SQLiteOpenFlag.DEFAULT, 64)) {
       SQLiteNative.exec(conn.arena(), conn.db(), "CREATE TABLE blobs (data BLOB)");
 
       byte[] original = {0x01, 0x02, 0x03, (byte) 0xFF, 0x00, (byte) 0xAB};
@@ -122,7 +122,7 @@ class SQLiteNativeTest {
 
   @Test
   void lastInsertRowid() throws SQLeichtException {
-    try (var conn = SQLiteConnectionHandle.open(":memory:", SQLiteOpenFlag.DEFAULT)) {
+    try (var conn = SQLiteConnectionHandle.open(":memory:", SQLiteOpenFlag.DEFAULT, 64)) {
       SQLiteNative.exec(conn.arena(), conn.db(), "CREATE TABLE t (id INTEGER PRIMARY KEY)");
       SQLiteNative.exec(conn.arena(), conn.db(), "INSERT INTO t VALUES (42)");
       assertEquals(42L, SQLiteNative.lastInsertRowid(conn.db()));
@@ -131,14 +131,14 @@ class SQLiteNativeTest {
 
   @Test
   void busyTimeout() throws SQLeichtException {
-    try (var conn = SQLiteConnectionHandle.open(":memory:", SQLiteOpenFlag.DEFAULT)) {
+    try (var conn = SQLiteConnectionHandle.open(":memory:", SQLiteOpenFlag.DEFAULT, 64)) {
       SQLiteNative.busyTimeout(conn.db(), 1000);
     }
   }
 
   @Test
   void statementResetAndRebind() throws SQLeichtException {
-    try (var conn = SQLiteConnectionHandle.open(":memory:", SQLiteOpenFlag.DEFAULT)) {
+    try (var conn = SQLiteConnectionHandle.open(":memory:", SQLiteOpenFlag.DEFAULT, 64)) {
       SQLiteNative.exec(
           conn.arena(), conn.db(), "CREATE TABLE t (id INTEGER PRIMARY KEY, val TEXT)");
 
@@ -170,7 +170,7 @@ class SQLiteNativeTest {
 
   @Test
   void columnTextSegmentReturnsRawUtf8() throws SQLeichtException {
-    try (var conn = SQLiteConnectionHandle.open(":memory:", SQLiteOpenFlag.DEFAULT)) {
+    try (var conn = SQLiteConnectionHandle.open(":memory:", SQLiteOpenFlag.DEFAULT, 64)) {
       SQLiteNative.exec(conn.arena(), conn.db(), "CREATE TABLE t (val TEXT)");
       SQLiteNative.exec(conn.arena(), conn.db(), "INSERT INTO t VALUES ('hello')");
 
@@ -193,7 +193,7 @@ class SQLiteNativeTest {
 
   @Test
   void columnTextSegmentNullReturnsNullSegment() throws SQLeichtException {
-    try (var conn = SQLiteConnectionHandle.open(":memory:", SQLiteOpenFlag.DEFAULT)) {
+    try (var conn = SQLiteConnectionHandle.open(":memory:", SQLiteOpenFlag.DEFAULT, 64)) {
       SQLiteNative.exec(conn.arena(), conn.db(), "CREATE TABLE t (val TEXT)");
       SQLiteNative.exec(conn.arena(), conn.db(), "INSERT INTO t VALUES (NULL)");
 
@@ -207,7 +207,7 @@ class SQLiteNativeTest {
 
   @Test
   void columnBlobSegmentReturnsRawBytes() throws SQLeichtException {
-    try (var conn = SQLiteConnectionHandle.open(":memory:", SQLiteOpenFlag.DEFAULT)) {
+    try (var conn = SQLiteConnectionHandle.open(":memory:", SQLiteOpenFlag.DEFAULT, 64)) {
       SQLiteNative.exec(conn.arena(), conn.db(), "CREATE TABLE t (data BLOB)");
 
       byte[] original = {0x01, 0x02, (byte) 0xFF, 0x00, (byte) 0xAB};
@@ -233,7 +233,7 @@ class SQLiteNativeTest {
 
   @Test
   void columnBlobSegmentNullReturnsNullSegment() throws SQLeichtException {
-    try (var conn = SQLiteConnectionHandle.open(":memory:", SQLiteOpenFlag.DEFAULT)) {
+    try (var conn = SQLiteConnectionHandle.open(":memory:", SQLiteOpenFlag.DEFAULT, 64)) {
       SQLiteNative.exec(conn.arena(), conn.db(), "CREATE TABLE t (data BLOB)");
       SQLiteNative.exec(conn.arena(), conn.db(), "INSERT INTO t VALUES (NULL)");
 
@@ -247,7 +247,7 @@ class SQLiteNativeTest {
 
   @Test
   void columnTextSegmentMultibyteUtf8() throws SQLeichtException {
-    try (var conn = SQLiteConnectionHandle.open(":memory:", SQLiteOpenFlag.DEFAULT)) {
+    try (var conn = SQLiteConnectionHandle.open(":memory:", SQLiteOpenFlag.DEFAULT, 64)) {
       SQLiteNative.exec(conn.arena(), conn.db(), "CREATE TABLE t (val TEXT)");
 
       String unicode = "héllo wörld 日本語";
@@ -281,13 +281,13 @@ class SQLiteNativeTest {
             SQLeichtException.class,
             () ->
                 SQLiteConnectionHandle.open(
-                    "/nonexistent/path/db.sqlite", SQLiteOpenFlag.READONLY));
+                    "/nonexistent/path/db.sqlite", SQLiteOpenFlag.READONLY, 64));
     assertEquals(SQLiteResultCode.CANTOPEN, ex.resultCode());
   }
 
   @Test
   void prepareInvalidSqlThrows() throws SQLeichtException {
-    try (var conn = SQLiteConnectionHandle.open(":memory:", SQLiteOpenFlag.DEFAULT)) {
+    try (var conn = SQLiteConnectionHandle.open(":memory:", SQLiteOpenFlag.DEFAULT, 64)) {
       SQLeichtException ex =
           assertThrows(
               SQLeichtException.class,
@@ -299,7 +299,7 @@ class SQLiteNativeTest {
 
   @Test
   void bindOutOfRangeIndexThrows() throws SQLeichtException {
-    try (var conn = SQLiteConnectionHandle.open(":memory:", SQLiteOpenFlag.DEFAULT)) {
+    try (var conn = SQLiteConnectionHandle.open(":memory:", SQLiteOpenFlag.DEFAULT, 64)) {
       SQLiteNative.exec(conn.arena(), conn.db(), "CREATE TABLE t (x INTEGER)");
       try (var stmt = SQLiteStatementHandle.prepare(conn, "INSERT INTO t VALUES (?)")) {
         SQLeichtException ex =

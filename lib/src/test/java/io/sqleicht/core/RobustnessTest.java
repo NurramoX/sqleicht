@@ -144,7 +144,7 @@ class RobustnessTest {
   void fileDatabaseUsesNomutex() throws Exception {
     Path tmpDb = Files.createTempFile("sqleicht-nomutex-", ".db");
     try (var db = SQLeicht.create(tmpDb.toString(), new SQLeichtConfig().threadCount(2))) {
-      // File-based databases should work with NOMUTEX since each connection is single-threaded
+      // File-based databases use NOMUTEX — safe because each connection is serialized by a lock
       db.execute("CREATE TABLE t (id INTEGER)");
       db.update("INSERT INTO t VALUES (?)", 1);
       try (var rows = db.query("SELECT id FROM t")) {
@@ -169,21 +169,18 @@ class RobustnessTest {
   // === 6.11 Arena leak safety ===
 
   @Test
-  void explicitCloseWorks() throws SQLeichtException {
+  void queryResultsStoreJavaTypes() throws SQLeichtException {
     try (var db = SQLeicht.create(":memory:")) {
       db.execute("CREATE TABLE t (name TEXT)");
       db.update("INSERT INTO t VALUES (?)", "hello");
 
-      var rows = db.query("SELECT name FROM t");
-      assertEquals("hello", rows.get(0).getText(0));
-      rows.close();
+      try (var rows = db.query("SELECT name FROM t")) {
+        // query() stores String directly — no arena, no segments
+        assertEquals("hello", rows.get(0).getText(0));
 
-      // Accessing segments after close should fail
-      assertThrows(
-          Exception.class,
-          () -> {
-            rows.get(0).getSegment(0).toArray(java.lang.foreign.ValueLayout.JAVA_BYTE);
-          });
+        // getSegment() is only available on forEach rows (zero-copy)
+        assertThrows(IllegalStateException.class, () -> rows.get(0).getSegment(0));
+      }
     }
   }
 

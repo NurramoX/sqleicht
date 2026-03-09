@@ -2,7 +2,6 @@ package io.sqleicht.core;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.sqleicht.SQLeicht;
 import io.sqleicht.SQLeichtConfig;
@@ -11,11 +10,10 @@ import org.junit.jupiter.api.Test;
 class ConnectionExecutorTest {
 
   @Test
-  void taskRunsOnPlatformThread() throws SQLeichtException {
+  void taskRunsOnCallingThread() throws SQLeichtException {
     try (var db = SQLeicht.create(":memory:", new SQLeichtConfig().threadCount(1))) {
       Thread taskThread = db.submit(conn -> Thread.currentThread());
-      assertTrue(taskThread.getName().startsWith("sqleicht-ffi-"));
-      assertTrue(!taskThread.isVirtual());
+      assertEquals(Thread.currentThread(), taskThread);
     }
   }
 
@@ -65,7 +63,7 @@ class ConnectionExecutorTest {
   void semaphoreBackpressure() throws Exception {
     try (var db =
         SQLeicht.create(":memory:", new SQLeichtConfig().threadCount(1).connectionTimeoutMs(500))) {
-      // Submit a slow task that blocks the single thread
+      // Submit a slow task that holds the single slot
       var latch = new java.util.concurrent.CountDownLatch(1);
       Thread.ofVirtual()
           .start(
@@ -85,10 +83,10 @@ class ConnectionExecutorTest {
                 }
               });
 
-      // Give it time to start
+      // Give it time to acquire the slot
       Thread.sleep(100);
 
-      // Second submit should timeout because the single thread is busy
+      // Second submit should timeout because the single slot is held
       assertThrows(SQLeichtException.class, () -> db.submit(conn -> null));
 
       latch.countDown();

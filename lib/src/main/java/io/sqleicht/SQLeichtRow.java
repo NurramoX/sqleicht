@@ -25,7 +25,9 @@ public final class SQLeichtRow {
     if (v == null) return MemorySegment.NULL;
     if (v instanceof MemorySegment seg) return seg;
     throw new IllegalStateException(
-        "Column " + col + " is not a segment type (type=" + columnTypes[col] + ")");
+        "Column "
+            + col
+            + " is not a MemorySegment — getSegment() is only available on forEach rows");
   }
 
   public MemorySegment getSegment(String name) {

@@ -159,6 +159,16 @@ public final class SQLeichtConnection {
     return SQLiteNative.changes(handle.db());
   }
 
+  public SQLiteNative.ColumnMetadata tableColumnMetadata(
+      String dbName, String tableName, String columnName) throws SQLeichtException {
+    return SQLiteNative.tableColumnMetadata(handle.db(), dbName, tableName, columnName);
+  }
+
+  public SQLiteNative.ColumnMetadata tableColumnMetadata(String tableName, String columnName)
+      throws SQLeichtException {
+    return tableColumnMetadata(null, tableName, columnName);
+  }
+
   int connectionId() {
     return System.identityHashCode(handle);
   }

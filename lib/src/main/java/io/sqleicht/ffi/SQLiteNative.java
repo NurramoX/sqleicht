@@ -125,8 +125,30 @@ public final class SQLiteNative {
   private static final MethodHandle COLUMN_NAME =
       downcall("sqlite3_column_name", FunctionDescriptor.of(ADDRESS, ADDRESS, JAVA_INT), CRITICAL);
 
-  // TODO: add sqlite3_column_origin_name and sqlite3_table_column_metadata for richer
-  //  column metadata without JDBC-style secondary queries (cheap pointer reads)
+  // --- Column metadata (requires SQLITE_ENABLE_COLUMN_METADATA at compile time) ---
+
+  private static final MethodHandle COLUMN_DATABASE_NAME =
+      optionalDowncall(
+          "sqlite3_column_database_name",
+          FunctionDescriptor.of(ADDRESS, ADDRESS, JAVA_INT),
+          CRITICAL);
+
+  private static final MethodHandle COLUMN_TABLE_NAME =
+      optionalDowncall(
+          "sqlite3_column_table_name", FunctionDescriptor.of(ADDRESS, ADDRESS, JAVA_INT), CRITICAL);
+
+  private static final MethodHandle COLUMN_ORIGIN_NAME =
+      optionalDowncall(
+          "sqlite3_column_origin_name",
+          FunctionDescriptor.of(ADDRESS, ADDRESS, JAVA_INT),
+          CRITICAL);
+
+  private static final MethodHandle TABLE_COLUMN_METADATA =
+      optionalDowncall(
+          "sqlite3_table_column_metadata",
+          FunctionDescriptor.of(
+              JAVA_INT, ADDRESS, ADDRESS, ADDRESS, ADDRESS, ADDRESS, ADDRESS, ADDRESS, ADDRESS,
+              ADDRESS));
 
   // --- Miscellaneous ---
 
@@ -577,7 +599,116 @@ public final class SQLiteNative {
     }
   }
 
+  // ===== Column metadata =====
+
+  public static boolean hasColumnMetadata() {
+    return COLUMN_ORIGIN_NAME != null;
+  }
+
+  public static String columnDatabaseName(MemorySegment stmt, int col) {
+    requireColumnMetadata("sqlite3_column_database_name");
+    try {
+      MemorySegment ptr = (MemorySegment) COLUMN_DATABASE_NAME.invokeExact(stmt, col);
+      return Utf8.read(ptr);
+    } catch (Throwable t) {
+      throw new AssertionError("FFM call failed", t);
+    }
+  }
+
+  public static String columnTableName(MemorySegment stmt, int col) {
+    requireColumnMetadata("sqlite3_column_table_name");
+    try {
+      MemorySegment ptr = (MemorySegment) COLUMN_TABLE_NAME.invokeExact(stmt, col);
+      return Utf8.read(ptr);
+    } catch (Throwable t) {
+      throw new AssertionError("FFM call failed", t);
+    }
+  }
+
+  public static String columnOriginName(MemorySegment stmt, int col) {
+    requireColumnMetadata("sqlite3_column_origin_name");
+    try {
+      MemorySegment ptr = (MemorySegment) COLUMN_ORIGIN_NAME.invokeExact(stmt, col);
+      return Utf8.read(ptr);
+    } catch (Throwable t) {
+      throw new AssertionError("FFM call failed", t);
+    }
+  }
+
+  /**
+   * Returns column metadata for a table column without running a query. Returns a {@link
+   * ColumnMetadata} record with data type, collation, and constraint info.
+   *
+   * @param db database connection
+   * @param dbName database name (e.g. "main") or null for the default database
+   * @param tableName table name
+   * @param columnName column name
+   */
+  public static ColumnMetadata tableColumnMetadata(
+      MemorySegment db, String dbName, String tableName, String columnName)
+      throws SQLeichtException {
+    if (TABLE_COLUMN_METADATA == null) {
+      throw new UnsupportedOperationException(
+          "sqlite3_table_column_metadata not available"
+              + " — SQLite was compiled without SQLITE_ENABLE_COLUMN_METADATA");
+    }
+    try (var arena = Arena.ofConfined()) {
+      MemorySegment dbNameStr = dbName != null ? Utf8.allocate(arena, dbName) : MemorySegment.NULL;
+      MemorySegment tableStr = Utf8.allocate(arena, tableName);
+      MemorySegment colStr = Utf8.allocate(arena, columnName);
+      MemorySegment ppDataType = arena.allocate(ADDRESS);
+      MemorySegment ppCollSeq = arena.allocate(ADDRESS);
+      MemorySegment pNotNull = arena.allocate(JAVA_INT);
+      MemorySegment pPrimaryKey = arena.allocate(JAVA_INT);
+      MemorySegment pAutoinc = arena.allocate(JAVA_INT);
+
+      int rc;
+      try {
+        rc =
+            (int)
+                TABLE_COLUMN_METADATA.invokeExact(
+                    db,
+                    dbNameStr,
+                    tableStr,
+                    colStr,
+                    ppDataType,
+                    ppCollSeq,
+                    pNotNull,
+                    pPrimaryKey,
+                    pAutoinc);
+      } catch (Throwable t) {
+        throw new AssertionError("FFM call failed", t);
+      }
+      if (rc != 0) {
+        throw SQLeichtException.fromConnection(db, rc);
+      }
+
+      String dataType = Utf8.read(ppDataType.get(ADDRESS, 0));
+      String collSeq = Utf8.read(ppCollSeq.get(ADDRESS, 0));
+      boolean notNull = pNotNull.get(JAVA_INT, 0) != 0;
+      boolean primaryKey = pPrimaryKey.get(JAVA_INT, 0) != 0;
+      boolean autoIncrement = pAutoinc.get(JAVA_INT, 0) != 0;
+
+      return new ColumnMetadata(dataType, collSeq, notNull, primaryKey, autoIncrement);
+    }
+  }
+
+  public record ColumnMetadata(
+      String dataType,
+      String collation,
+      boolean notNull,
+      boolean primaryKey,
+      boolean autoIncrement) {}
+
   // ===== Internal =====
+
+  private static void requireColumnMetadata(String functionName) {
+    if (COLUMN_ORIGIN_NAME == null) {
+      throw new UnsupportedOperationException(
+          functionName
+              + " not available — SQLite was compiled without SQLITE_ENABLE_COLUMN_METADATA");
+    }
+  }
 
   private static MethodHandle downcall(
       String name, FunctionDescriptor desc, Linker.Option... opts) {
@@ -590,5 +721,10 @@ public final class SQLiteNative {
                             + name
                             + ". Is the sqlite3 library loaded correctly?"));
     return LINKER.downcallHandle(symbol, desc, opts);
+  }
+
+  private static MethodHandle optionalDowncall(
+      String name, FunctionDescriptor desc, Linker.Option... opts) {
+    return LIB.find(name).map(symbol -> LINKER.downcallHandle(symbol, desc, opts)).orElse(null);
   }
 }

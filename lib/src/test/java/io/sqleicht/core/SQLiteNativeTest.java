@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.sqleicht.ffi.SQLiteNative;
 import java.lang.foreign.MemorySegment;
@@ -264,6 +265,48 @@ class SQLiteNativeTest {
         // Verify String round-trip
         assertEquals(unicode, SQLiteNative.columnText(stmt.stmt(), 0));
       }
+    }
+  }
+
+  // ===== Column metadata tests =====
+
+  @Test
+  void columnOriginMetadataWhenAvailable() throws SQLeichtException {
+    assumeTrue(SQLiteNative.hasColumnMetadata(), "SQLITE_ENABLE_COLUMN_METADATA not available");
+
+    try (var conn = SQLiteConnectionHandle.open(":memory:", SQLiteOpenFlag.DEFAULT, 64)) {
+      SQLiteNative.exec(
+          conn.arena(), conn.db(), "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)");
+      SQLiteNative.exec(conn.arena(), conn.db(), "INSERT INTO users VALUES (1, 'alice')");
+
+      try (var stmt = SQLiteStatementHandle.prepare(conn, "SELECT id, name FROM users")) {
+        SQLiteNative.step(stmt.stmt());
+
+        assertEquals("main", SQLiteNative.columnDatabaseName(stmt.stmt(), 0));
+        assertEquals("users", SQLiteNative.columnTableName(stmt.stmt(), 0));
+        assertEquals("id", SQLiteNative.columnOriginName(stmt.stmt(), 0));
+        assertEquals("name", SQLiteNative.columnOriginName(stmt.stmt(), 1));
+      }
+    }
+  }
+
+  @Test
+  void tableColumnMetadataReturnsConstraintInfo() throws SQLeichtException {
+    assumeTrue(SQLiteNative.hasColumnMetadata(), "SQLITE_ENABLE_COLUMN_METADATA not available");
+
+    try (var conn = SQLiteConnectionHandle.open(":memory:", SQLiteOpenFlag.DEFAULT, 64)) {
+      SQLiteNative.exec(
+          conn.arena(),
+          conn.db(),
+          "CREATE TABLE items (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL)");
+
+      var idMeta = SQLiteNative.tableColumnMetadata(conn.db(), null, "items", "id");
+      assertTrue(idMeta.primaryKey());
+      assertTrue(idMeta.autoIncrement());
+
+      var nameMeta = SQLiteNative.tableColumnMetadata(conn.db(), null, "items", "name");
+      assertTrue(nameMeta.notNull());
+      assertEquals("TEXT", nameMeta.dataType());
     }
   }
 

@@ -3,6 +3,7 @@ package io.sqleicht.core;
 import io.sqleicht.SQLeichtConfig;
 import io.sqleicht.TaskFunction;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.LockSupport;
@@ -66,6 +67,8 @@ public final class ConnectionExecutor implements AutoCloseable {
       return task.apply(conn);
     }
 
+    long deadlineNanos = System.nanoTime() + config.connectionTimeoutMs() * 1_000_000L;
+
     boolean acquired;
     try {
       acquired = semaphore.tryAcquire(config.connectionTimeoutMs(), TimeUnit.MILLISECONDS);
@@ -82,7 +85,7 @@ public final class ConnectionExecutor implements AutoCloseable {
     }
 
     try {
-      ConnectionSlot slot = acquireSlot();
+      ConnectionSlot slot = acquireSlot(deadlineNanos);
       try {
         // Handle evict (max-lifetime rotation) or reopen (after idle close)
         if (slot.evict) {
@@ -146,34 +149,52 @@ public final class ConnectionExecutor implements AutoCloseable {
       housekeepingThread.interrupt();
     }
 
-    // Wait for in-flight tasks then close connections (shared arena — any thread can close)
-    for (ConnectionSlot slot : slots) {
-      try {
-        if (slot.lock().tryLock(5, TimeUnit.SECONDS)) {
-          try {
-            slot.closeConnection();
-          } finally {
-            slot.lock().unlock();
-          }
-        }
-      } catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
+    // Close all connections concurrently (shared arena allows cross-thread close)
+    try (var scope = StructuredTaskScope.open()) {
+      for (ConnectionSlot slot : slots) {
+        scope.fork(
+            () -> {
+              closeSlot(slot);
+              return null;
+            });
       }
+      scope.join();
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+    }
+  }
+
+  private void closeSlot(ConnectionSlot slot) {
+    try {
+      if (slot.lock().tryLock(5, TimeUnit.SECONDS)) {
+        try {
+          slot.closeConnection();
+        } finally {
+          slot.lock().unlock();
+        }
+      }
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
     }
   }
 
   /**
    * Spin-then-park to find an unlocked slot. The semaphore guarantees at most N concurrent callers
    * for N slots, so at least one slot will become available. We spin briefly (cheap under low
-   * contention), then park to avoid burning CPU under sustained contention.
+   * contention), then park to avoid burning CPU under sustained contention. Respects the overall
+   * connection deadline to avoid exceeding the user's configured timeout.
    */
-  private ConnectionSlot acquireSlot() {
+  private ConnectionSlot acquireSlot(long deadlineNanos) throws SQLeichtException {
     int spins = 0;
     while (true) {
       for (ConnectionSlot slot : slots) {
         if (slot.lock().tryLock()) {
           return slot;
         }
+      }
+      if (System.nanoTime() >= deadlineNanos) {
+        throw new SQLeichtException(
+            0, 0, "Connection timeout — deadline exceeded during slot acquisition");
       }
       if (spins < 8) {
         Thread.onSpinWait();

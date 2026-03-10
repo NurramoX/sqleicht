@@ -96,6 +96,18 @@ public final class SQLeichtLiveStatement implements AutoCloseable {
     return SQLiteNative.columnType(handle.stmt(), col);
   }
 
+  public String columnDatabaseName(int col) {
+    return SQLiteNative.columnDatabaseName(handle.stmt(), col);
+  }
+
+  public String columnTableName(int col) {
+    return SQLiteNative.columnTableName(handle.stmt(), col);
+  }
+
+  public String columnOriginName(int col) {
+    return SQLiteNative.columnOriginName(handle.stmt(), col);
+  }
+
   public int stmtStatus(int op, boolean reset) {
     return SQLiteNative.stmtStatus(handle.stmt(), op, reset);
   }

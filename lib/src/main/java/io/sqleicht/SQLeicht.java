@@ -71,9 +71,12 @@ public final class SQLeicht implements AutoCloseable {
             } catch (SQLeichtException rollbackErr) {
               t.addSuppressed(rollbackErr);
             }
-            if (t instanceof SQLeichtException se) throw se;
-            if (t instanceof RuntimeException re) throw re;
-            if (t instanceof Error e) throw e;
+            switch (t) {
+              case SQLeichtException se -> throw se;
+              case RuntimeException re -> throw re;
+              case Error e -> throw e;
+              default -> {}
+            }
             throw new SQLeichtException(0, 0, "Transaction failed: " + t.getMessage());
           }
         });

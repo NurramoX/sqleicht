@@ -155,6 +155,9 @@ public final class SQLiteNative {
   private static final MethodHandle BUSY_TIMEOUT =
       downcall("sqlite3_busy_timeout", FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT));
 
+  private static final MethodHandle BUSY_HANDLER =
+      downcall("sqlite3_busy_handler", FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS, ADDRESS));
+
   private static final MethodHandle CHANGES64 =
       downcall("sqlite3_changes64", FunctionDescriptor.of(JAVA_LONG, ADDRESS), CRITICAL);
 
@@ -542,6 +545,19 @@ public final class SQLiteNative {
     int rc;
     try {
       rc = (int) BUSY_TIMEOUT.invokeExact(db, ms);
+    } catch (Throwable t) {
+      throw new AssertionError("FFM call failed", t);
+    }
+    if (rc != 0) {
+      throw SQLeichtException.fromConnection(db, rc);
+    }
+  }
+
+  public static void setBusyHandler(MemorySegment db, MemorySegment callback, MemorySegment pArg)
+      throws SQLeichtException {
+    int rc;
+    try {
+      rc = (int) BUSY_HANDLER.invokeExact(db, callback, pArg);
     } catch (Throwable t) {
       throw new AssertionError("FFM call failed", t);
     }

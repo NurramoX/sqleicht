@@ -1,7 +1,17 @@
 package io.sqleicht.core;
 
+import static java.lang.foreign.ValueLayout.ADDRESS;
+import static java.lang.foreign.ValueLayout.JAVA_INT;
+import static java.lang.foreign.ValueLayout.JAVA_LONG;
+
 import io.sqleicht.SQLeichtConfig;
 import io.sqleicht.TaskFunction;
+import java.lang.foreign.Arena;
+import java.lang.foreign.FunctionDescriptor;
+import java.lang.foreign.Linker;
+import java.lang.foreign.MemorySegment;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.ThreadLocalRandom;
@@ -12,10 +22,37 @@ public final class ConnectionExecutor implements AutoCloseable {
   private static final int RUNNING = 0;
   private static final int SHUTDOWN = 1;
 
+  // SQLite's built-in busy handler delay schedule (nanoseconds)
+  private static final long[] BUSY_DELAYS_NS = {
+    1_000_000, 2_000_000, 5_000_000, 10_000_000, 15_000_000,
+    20_000_000, 25_000_000, 25_000_000, 25_000_000, 50_000_000,
+    50_000_000, 100_000_000
+  };
+
+  static final MemorySegment BUSY_CALLBACK;
+
+  static {
+    try {
+      var mh =
+          MethodHandles.lookup()
+              .findStatic(
+                  ConnectionExecutor.class,
+                  "busyCallback",
+                  MethodType.methodType(int.class, MemorySegment.class, int.class));
+      BUSY_CALLBACK =
+          Linker.nativeLinker()
+              .upcallStub(mh, FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT), Arena.global());
+    } catch (NoSuchMethodException | IllegalAccessException e) {
+      throw new ExceptionInInitializerError(e);
+    }
+  }
+
+  private static final ScopedValue<ConnectionSlot> HELD_SLOT = ScopedValue.newInstance();
+  private static final ScopedValue<Long> DEADLINE = ScopedValue.newInstance();
+
   private final SQLeichtConfig config;
   private final ConnectionSlot[] slots;
   private final Semaphore semaphore;
-  private static final ScopedValue<ConnectionSlot> HELD_SLOT = ScopedValue.newInstance();
   private final Thread housekeepingThread;
   private volatile int poolState = RUNNING;
 
@@ -97,7 +134,9 @@ public final class ConnectionExecutor implements AutoCloseable {
         try {
           SQLeichtConnection conn = new SQLeichtConnection(slot.connection());
           try {
-            return ScopedValue.where(HELD_SLOT, slot).call(() -> task.apply(conn));
+            return ScopedValue.where(HELD_SLOT, slot)
+                .where(DEADLINE, deadlineNanos)
+                .call(() -> task.apply(conn));
           } catch (SQLeichtException | RuntimeException e) {
             throw e;
           } catch (Exception e) {
@@ -176,6 +215,33 @@ public final class ConnectionExecutor implements AutoCloseable {
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
     }
+  }
+
+  /**
+   * Upcall from SQLite's busy handler. Runs on the same thread as the caller, so ScopedValues are
+   * still bound. pArg layout: [0] busyTimeoutNanos (long), [8] sequenceStartNanos (long, mutable).
+   */
+  @SuppressWarnings("unused") // called via MethodHandle upcall
+  static int busyCallback(MemorySegment pArg, int count) {
+    long now = System.nanoTime();
+    pArg = pArg.reinterpret(16);
+
+    // Check operation deadline (propagated from connectionTimeoutMs)
+    if (DEADLINE.isBound() && now >= DEADLINE.get()) return 0;
+
+    // Check per-connection busy timeout cap
+    long busyTimeoutNanos = pArg.get(JAVA_LONG, 0);
+    if (busyTimeoutNanos > 0) {
+      if (count == 0) pArg.set(JAVA_LONG, 8, now);
+      if (now - pArg.get(JAVA_LONG, 8) >= busyTimeoutNanos) return 0;
+    } else if (!DEADLINE.isBound()) {
+      return 0; // no busy timeout and no operation deadline — don't retry
+    }
+
+    // Backoff sleep matching SQLite's built-in pattern
+    int idx = Math.min(count, BUSY_DELAYS_NS.length - 1);
+    LockSupport.parkNanos(BUSY_DELAYS_NS[idx]);
+    return 1;
   }
 
   /**

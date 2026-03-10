@@ -1,5 +1,7 @@
 package io.sqleicht.core;
 
+import static java.lang.foreign.ValueLayout.JAVA_LONG;
+
 import io.sqleicht.SQLeichtConfig;
 import io.sqleicht.ffi.SQLiteNative;
 import java.lang.foreign.Arena;
@@ -41,7 +43,10 @@ public final class ConnectionSlot {
     if (journalMode != null && !journalMode.isEmpty()) {
       SQLiteNative.exec(arena, db, "PRAGMA journal_mode=" + journalMode);
     }
-    SQLiteNative.busyTimeout(db, config.busyTimeoutMs());
+    // Register deadline-aware busy handler (replaces sqlite3_busy_timeout PRAGMA)
+    MemorySegment busyCtx = arena.allocate(JAVA_LONG, 2);
+    busyCtx.set(JAVA_LONG, 0, config.busyTimeoutMs() * 1_000_000L);
+    SQLiteNative.setBusyHandler(db, ConnectionExecutor.BUSY_CALLBACK, busyCtx);
     SQLiteNative.exec(arena, db, "PRAGMA synchronous=" + config.synchronous());
 
     // Cache and memory

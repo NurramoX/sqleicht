@@ -1,9 +1,7 @@
 package io.sqleicht;
 
 import io.sqleicht.core.ConnectionExecutor;
-import io.sqleicht.core.SQLeichtConnection;
 import io.sqleicht.core.SQLeichtException;
-import io.sqleicht.core.TaskFunction;
 
 public final class SQLeicht implements AutoCloseable {
   private final ConnectionExecutor executor;
@@ -39,28 +37,24 @@ public final class SQLeicht implements AutoCloseable {
     return executor.submit(conn -> conn.query(sql, params));
   }
 
-  public void forEach(String sql, RowConsumer consumer, Object... params) throws SQLeichtException {
+  public void forEach(String sql, RowConsumer consumer) throws SQLeichtException {
     executor.submit(
         conn -> {
-          conn.forEach(sql, consumer, params);
+          conn.forEach(sql, consumer);
           return null;
         });
   }
 
-  public SQLeichtStatement prepare(String sql) {
-    return new SQLeichtStatement(this, sql);
-  }
-
-  public long lastInsertRowid() throws SQLeichtException {
-    return executor.submit(SQLeichtConnection::lastInsertRowid);
-  }
-
-  public long changes() throws SQLeichtException {
-    return executor.submit(SQLeichtConnection::changes);
+  public void forEach(String sql, Object[] params, RowConsumer consumer) throws SQLeichtException {
+    executor.submit(
+        conn -> {
+          conn.forEach(sql, params, consumer);
+          return null;
+        });
   }
 
   public long batch(String sql, Iterable<Object[]> rows) throws SQLeichtException {
-    return transaction(tx -> tx.batch(sql, rows));
+    return transaction((TransactionFunction<Long>) tx -> tx.batch(sql, rows));
   }
 
   public <T> T transaction(TransactionFunction<T> fn) throws SQLeichtException {
@@ -82,6 +76,14 @@ public final class SQLeicht implements AutoCloseable {
             if (t instanceof Error e) throw e;
             throw new SQLeichtException(0, 0, "Transaction failed: " + t.getMessage());
           }
+        });
+  }
+
+  public void transaction(TransactionConsumer consumer) throws SQLeichtException {
+    transaction(
+        tx -> {
+          consumer.accept(tx);
+          return null;
         });
   }
 

@@ -114,10 +114,9 @@ class SQLeichtTest {
   }
 
   @Test
-  void prepareBindExecuteUpdate() throws SQLeichtException {
+  void updateWithParams() throws SQLeichtException {
     db.execute("CREATE TABLE t (id INTEGER, name TEXT)");
-    long count =
-        db.prepare("INSERT INTO t VALUES (?, ?)").bind(1, 1).bind(2, "hello").executeUpdate();
+    long count = db.update("INSERT INTO t VALUES (?, ?)", 1, "hello");
     assertEquals(1L, count);
 
     try (var rows = db.query("SELECT * FROM t")) {
@@ -127,24 +126,23 @@ class SQLeichtTest {
   }
 
   @Test
-  void prepareBindQuery() throws SQLeichtException {
+  void queryWithNamedParams() throws SQLeichtException {
     db.execute("CREATE TABLE t (id INTEGER, name TEXT)");
     db.update("INSERT INTO t VALUES (?, ?)", 1, "hello");
     db.update("INSERT INTO t VALUES (?, ?)", 2, "world");
 
-    try (var rows = db.prepare("SELECT * FROM t WHERE id = ?").bind(1, 2).query()) {
+    try (var rows = db.query("SELECT * FROM t WHERE id = ?", 2)) {
       assertEquals(1, rows.size());
       assertEquals("world", rows.get(0).getText(1));
     }
   }
 
   @Test
-  void prepareResetRebind() throws SQLeichtException {
+  void multipleUpdates() throws SQLeichtException {
     db.execute("CREATE TABLE t (id INTEGER, name TEXT)");
-    var stmt = db.prepare("INSERT INTO t VALUES (?, ?)");
 
-    stmt.bind(1, 1).bind(2, "first").executeUpdate();
-    stmt.reset().bind(1, 2).bind(2, "second").executeUpdate();
+    db.update("INSERT INTO t VALUES (?, ?)", 1, "first");
+    db.update("INSERT INTO t VALUES (?, ?)", 2, "second");
 
     try (var rows = db.query("SELECT COUNT(*) FROM t")) {
       assertEquals(2, rows.get(0).getInt(0));
@@ -331,12 +329,12 @@ class SQLeichtTest {
   }
 
   @Test
-  void temporalWithPreparedStatement() throws SQLeichtException {
+  void temporalUpdateAndQuery() throws SQLeichtException {
     db.execute("CREATE TABLE t (d TEXT, dt TEXT)");
     LocalDate date = LocalDate.of(2026, 1, 15);
     LocalDateTime dateTime = LocalDateTime.of(2026, 1, 15, 10, 0);
 
-    db.prepare("INSERT INTO t VALUES (?, ?)").bind(1, date).bind(2, dateTime).executeUpdate();
+    db.update("INSERT INTO t VALUES (?, ?)", date, dateTime);
 
     try (var rows = db.query("SELECT * FROM t")) {
       assertEquals(date, rows.get(0).getLocalDate(0));
@@ -411,7 +409,6 @@ class SQLeichtTest {
         tx -> {
           tx.update("INSERT INTO t VALUES (?)", 1);
           tx.update("INSERT INTO t VALUES (?)", 2);
-          return null;
         });
 
     try (var rows = db.query("SELECT COUNT(*) FROM t")) {
@@ -466,7 +463,6 @@ class SQLeichtTest {
           tx.batch("INSERT INTO t VALUES (?, ?)", rows);
 
           tx.update("INSERT INTO t VALUES (?, ?)", 101, "after-batch");
-          return null;
         });
 
     try (var result = db.query("SELECT COUNT(*) FROM t")) {
@@ -527,7 +523,7 @@ class SQLeichtTest {
     }
 
     AtomicInteger count = new AtomicInteger();
-    db.forEach("SELECT * FROM t WHERE id >= ?", row -> count.incrementAndGet(), 25);
+    db.forEach("SELECT * FROM t WHERE id >= ?", new Object[] {25}, row -> count.incrementAndGet());
 
     assertEquals(25, count.get());
   }
@@ -572,7 +568,6 @@ class SQLeichtTest {
             batch.add(new Object[] {i, kb});
           }
           tx.batch("INSERT INTO big VALUES (?, ?)", batch);
-          return null;
         });
 
     AtomicInteger count = new AtomicInteger();
@@ -624,7 +619,6 @@ class SQLeichtTest {
           AtomicInteger count = new AtomicInteger();
           tx.forEach("SELECT * FROM t", row -> count.incrementAndGet());
           assertEquals(10, count.get());
-          return null;
         });
   }
 

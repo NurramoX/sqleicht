@@ -16,7 +16,7 @@ public final class SQLeichtConfig {
   private long idleTimeoutMs = 10 * 60 * 1000L;
   private int statementCacheSize = 64;
   private long connectionTimeoutMs = 30_000L;
-  long housekeepingIntervalMs = 30_000L;
+  private long housekeepingIntervalMs = 30_000L;
   private volatile boolean sealed;
 
   // --- Pool settings ---
@@ -42,6 +42,12 @@ public final class SQLeichtConfig {
   public SQLeichtConfig connectionTimeoutMs(long connectionTimeoutMs) {
     checkNotSealed();
     this.connectionTimeoutMs = connectionTimeoutMs;
+    return this;
+  }
+
+  public SQLeichtConfig housekeepingIntervalMs(long housekeepingIntervalMs) {
+    checkNotSealed();
+    this.housekeepingIntervalMs = housekeepingIntervalMs;
     return this;
   }
 
@@ -195,7 +201,12 @@ public final class SQLeichtConfig {
           "idleTimeoutMs must be 0 (disabled) or >= 1000, was " + idleTimeoutMs);
     }
     if (idleTimeoutMs != 0 && idleTimeoutMs >= maxLifetimeMs) {
-      idleTimeoutMs = 0; // disable — idle timeout >= maxLifetime is meaningless
+      throw new IllegalArgumentException(
+          "idleTimeoutMs ("
+              + idleTimeoutMs
+              + ") must be less than maxLifetimeMs ("
+              + maxLifetimeMs
+              + "), or set to 0 to disable");
     }
     if (statementCacheSize < 0) {
       throw new IllegalArgumentException(

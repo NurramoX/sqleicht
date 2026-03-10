@@ -22,8 +22,12 @@ public final class SQLeichtTransaction {
     return conn.query(sql, params);
   }
 
-  public void forEach(String sql, RowConsumer consumer, Object... params) throws SQLeichtException {
-    conn.forEach(sql, consumer, params);
+  public void forEach(String sql, RowConsumer consumer) throws SQLeichtException {
+    conn.forEach(sql, consumer);
+  }
+
+  public void forEach(String sql, Object[] params, RowConsumer consumer) throws SQLeichtException {
+    conn.forEach(sql, params, consumer);
   }
 
   public long batch(String sql, Iterable<Object[]> rows) throws SQLeichtException {

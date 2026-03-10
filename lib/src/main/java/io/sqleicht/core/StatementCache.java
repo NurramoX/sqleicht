@@ -1,19 +1,16 @@
 package io.sqleicht.core;
 
 import io.sqleicht.ffi.SQLiteNative;
-import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 final class StatementCache {
-  private final Arena arena;
   private final MemorySegment db;
   private final int maxSize;
   private final LinkedHashMap<String, MemorySegment> cache;
 
-  StatementCache(Arena arena, MemorySegment db, int maxSize) {
-    this.arena = arena;
+  StatementCache(MemorySegment db, int maxSize) {
     this.db = db;
     this.maxSize = maxSize;
     this.cache =
@@ -36,7 +33,7 @@ final class StatementCache {
         return stmt;
       }
     }
-    return SQLiteNative.prepare(arena, db, sql);
+    return SQLiteNative.prepare(db, sql);
   }
 
   void release(String sql, MemorySegment stmt) {

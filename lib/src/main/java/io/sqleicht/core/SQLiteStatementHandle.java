@@ -1,7 +1,6 @@
 package io.sqleicht.core;
 
 import io.sqleicht.ffi.SQLiteNative;
-import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 
 public final class SQLiteStatementHandle implements AutoCloseable {
@@ -15,8 +14,7 @@ public final class SQLiteStatementHandle implements AutoCloseable {
 
   public static SQLiteStatementHandle prepare(SQLiteConnectionHandle connection, String sql)
       throws SQLeichtException {
-    Arena arena = connection.arena();
-    MemorySegment stmt = SQLiteNative.prepare(arena, connection.db(), sql);
+    MemorySegment stmt = SQLiteNative.prepare(connection.db(), sql);
     return new SQLiteStatementHandle(connection, stmt);
   }
 

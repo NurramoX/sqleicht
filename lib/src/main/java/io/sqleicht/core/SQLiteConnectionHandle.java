@@ -20,7 +20,7 @@ public final class SQLiteConnectionHandle implements AutoCloseable {
     Arena arena = Arena.ofShared();
     try {
       MemorySegment db = SQLiteNative.open(arena, filename, flags);
-      StatementCache cache = new StatementCache(arena, db, stmtCacheSize);
+      StatementCache cache = new StatementCache(db, stmtCacheSize);
       return new SQLiteConnectionHandle(arena, db, cache);
     } catch (Throwable t) {
       arena.close();

@@ -1,6 +1,7 @@
 package io.sqleicht.core;
 
 import io.sqleicht.SQLeichtConfig;
+import io.sqleicht.TaskFunction;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
@@ -13,7 +14,7 @@ public final class ConnectionExecutor implements AutoCloseable {
   private final SQLeichtConfig config;
   private final ConnectionSlot[] slots;
   private final Semaphore semaphore;
-  private final ThreadLocal<ConnectionSlot> heldSlot = new ThreadLocal<>();
+  private static final ScopedValue<ConnectionSlot> HELD_SLOT = ScopedValue.newInstance();
   private final Thread housekeepingThread;
   private volatile int poolState = RUNNING;
 
@@ -60,9 +61,8 @@ public final class ConnectionExecutor implements AutoCloseable {
     }
 
     // Reentrant: already holding a slot on this thread
-    ConnectionSlot held = heldSlot.get();
-    if (held != null) {
-      SQLeichtConnection conn = new SQLeichtConnection(held.connection());
+    if (HELD_SLOT.isBound()) {
+      SQLeichtConnection conn = new SQLeichtConnection(HELD_SLOT.get().connection());
       return task.apply(conn);
     }
 
@@ -91,13 +91,17 @@ public final class ConnectionExecutor implements AutoCloseable {
           slot.openConnection();
         }
 
-        heldSlot.set(slot);
         try {
           SQLeichtConnection conn = new SQLeichtConnection(slot.connection());
-          return task.apply(conn);
+          try {
+            return ScopedValue.where(HELD_SLOT, slot).call(() -> task.apply(conn));
+          } catch (SQLeichtException | RuntimeException e) {
+            throw e;
+          } catch (Exception e) {
+            throw new RuntimeException(e);
+          }
         } finally {
           slot.lastAccessed = System.nanoTime();
-          heldSlot.remove();
         }
       } finally {
         slot.lock().unlock();

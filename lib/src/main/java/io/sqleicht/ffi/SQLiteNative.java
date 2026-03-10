@@ -21,6 +21,7 @@ public final class SQLiteNative {
   private static final MemorySegment SQLITE_STATIC = MemorySegment.NULL;
 
   private static final Linker LINKER = Linker.nativeLinker();
+  private static final Linker.Option CRITICAL = Linker.Option.critical(false);
   private static final SymbolLookup LIB = SQLiteLibrary.instance();
 
   // --- Connection management ---
@@ -38,10 +39,10 @@ public final class SQLiteNative {
       downcall("sqlite3_errmsg", FunctionDescriptor.of(ADDRESS, ADDRESS));
 
   private static final MethodHandle ERRCODE =
-      downcall("sqlite3_errcode", FunctionDescriptor.of(JAVA_INT, ADDRESS));
+      downcall("sqlite3_errcode", FunctionDescriptor.of(JAVA_INT, ADDRESS), CRITICAL);
 
   private static final MethodHandle EXTENDED_ERRCODE =
-      downcall("sqlite3_extended_errcode", FunctionDescriptor.of(JAVA_INT, ADDRESS));
+      downcall("sqlite3_extended_errcode", FunctionDescriptor.of(JAVA_INT, ADDRESS), CRITICAL);
 
   // --- Statement lifecycle ---
 
@@ -90,36 +91,39 @@ public final class SQLiteNative {
       downcall("sqlite3_bind_null", FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT));
 
   private static final MethodHandle BIND_PARAMETER_COUNT =
-      downcall("sqlite3_bind_parameter_count", FunctionDescriptor.of(JAVA_INT, ADDRESS));
+      downcall("sqlite3_bind_parameter_count", FunctionDescriptor.of(JAVA_INT, ADDRESS), CRITICAL);
 
   // --- Reading columns ---
 
   private static final MethodHandle COLUMN_INT =
-      downcall("sqlite3_column_int", FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT));
+      downcall("sqlite3_column_int", FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT), CRITICAL);
 
   private static final MethodHandle COLUMN_INT64 =
-      downcall("sqlite3_column_int64", FunctionDescriptor.of(JAVA_LONG, ADDRESS, JAVA_INT));
+      downcall(
+          "sqlite3_column_int64", FunctionDescriptor.of(JAVA_LONG, ADDRESS, JAVA_INT), CRITICAL);
 
   private static final MethodHandle COLUMN_DOUBLE =
-      downcall("sqlite3_column_double", FunctionDescriptor.of(JAVA_DOUBLE, ADDRESS, JAVA_INT));
+      downcall(
+          "sqlite3_column_double", FunctionDescriptor.of(JAVA_DOUBLE, ADDRESS, JAVA_INT), CRITICAL);
 
   private static final MethodHandle COLUMN_TEXT =
-      downcall("sqlite3_column_text", FunctionDescriptor.of(ADDRESS, ADDRESS, JAVA_INT));
+      downcall("sqlite3_column_text", FunctionDescriptor.of(ADDRESS, ADDRESS, JAVA_INT), CRITICAL);
 
   private static final MethodHandle COLUMN_BLOB =
-      downcall("sqlite3_column_blob", FunctionDescriptor.of(ADDRESS, ADDRESS, JAVA_INT));
+      downcall("sqlite3_column_blob", FunctionDescriptor.of(ADDRESS, ADDRESS, JAVA_INT), CRITICAL);
 
   private static final MethodHandle COLUMN_BYTES =
-      downcall("sqlite3_column_bytes", FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT));
+      downcall(
+          "sqlite3_column_bytes", FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT), CRITICAL);
 
   private static final MethodHandle COLUMN_TYPE =
-      downcall("sqlite3_column_type", FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT));
+      downcall("sqlite3_column_type", FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT), CRITICAL);
 
   private static final MethodHandle COLUMN_COUNT =
-      downcall("sqlite3_column_count", FunctionDescriptor.of(JAVA_INT, ADDRESS));
+      downcall("sqlite3_column_count", FunctionDescriptor.of(JAVA_INT, ADDRESS), CRITICAL);
 
   private static final MethodHandle COLUMN_NAME =
-      downcall("sqlite3_column_name", FunctionDescriptor.of(ADDRESS, ADDRESS, JAVA_INT));
+      downcall("sqlite3_column_name", FunctionDescriptor.of(ADDRESS, ADDRESS, JAVA_INT), CRITICAL);
 
   // TODO: add sqlite3_column_origin_name and sqlite3_table_column_metadata for richer
   //  column metadata without JDBC-style secondary queries (cheap pointer reads)
@@ -130,10 +134,10 @@ public final class SQLiteNative {
       downcall("sqlite3_busy_timeout", FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT));
 
   private static final MethodHandle CHANGES64 =
-      downcall("sqlite3_changes64", FunctionDescriptor.of(JAVA_LONG, ADDRESS));
+      downcall("sqlite3_changes64", FunctionDescriptor.of(JAVA_LONG, ADDRESS), CRITICAL);
 
   private static final MethodHandle LAST_INSERT_ROWID =
-      downcall("sqlite3_last_insert_rowid", FunctionDescriptor.of(JAVA_LONG, ADDRESS));
+      downcall("sqlite3_last_insert_rowid", FunctionDescriptor.of(JAVA_LONG, ADDRESS), CRITICAL);
 
   private static final MethodHandle EXEC =
       downcall(
@@ -141,10 +145,13 @@ public final class SQLiteNative {
           FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS, ADDRESS, ADDRESS, ADDRESS));
 
   private static final MethodHandle STMT_STATUS =
-      downcall("sqlite3_stmt_status", FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT, JAVA_INT));
+      downcall(
+          "sqlite3_stmt_status",
+          FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT, JAVA_INT),
+          CRITICAL);
 
   private static final MethodHandle LIBVERSION =
-      downcall("sqlite3_libversion", FunctionDescriptor.of(ADDRESS));
+      downcall("sqlite3_libversion", FunctionDescriptor.of(ADDRESS), CRITICAL);
 
   private SQLiteNative() {}
 
@@ -215,25 +222,26 @@ public final class SQLiteNative {
 
   // ===== Statement lifecycle =====
 
-  public static MemorySegment prepare(Arena arena, MemorySegment db, String sql)
-      throws SQLeichtException {
-    return prepare(arena, db, sql, SQLITE_PREPARE_PERSISTENT);
+  public static MemorySegment prepare(MemorySegment db, String sql) throws SQLeichtException {
+    return prepare(db, sql, SQLITE_PREPARE_PERSISTENT);
   }
 
-  public static MemorySegment prepare(Arena arena, MemorySegment db, String sql, int prepFlags)
+  public static MemorySegment prepare(MemorySegment db, String sql, int prepFlags)
       throws SQLeichtException {
-    MemorySegment sqlStr = Utf8.allocate(arena, sql);
-    MemorySegment ppStmt = arena.allocate(ADDRESS);
-    int rc;
-    try {
-      rc = (int) PREPARE_V3.invokeExact(db, sqlStr, -1, prepFlags, ppStmt, MemorySegment.NULL);
-    } catch (Throwable t) {
-      throw new AssertionError("FFM call failed", t);
+    try (var tempArena = Arena.ofConfined()) {
+      MemorySegment sqlStr = Utf8.allocate(tempArena, sql);
+      MemorySegment ppStmt = tempArena.allocate(ADDRESS);
+      int rc;
+      try {
+        rc = (int) PREPARE_V3.invokeExact(db, sqlStr, -1, prepFlags, ppStmt, MemorySegment.NULL);
+      } catch (Throwable t) {
+        throw new AssertionError("FFM call failed", t);
+      }
+      if (rc != 0) {
+        throw SQLeichtException.fromConnection(db, rc);
+      }
+      return ppStmt.get(ADDRESS, 0);
     }
-    if (rc != 0) {
-      throw SQLeichtException.fromConnection(db, rc);
-    }
-    return ppStmt.get(ADDRESS, 0);
   }
 
   public static int step(MemorySegment stmt) {
@@ -571,7 +579,8 @@ public final class SQLiteNative {
 
   // ===== Internal =====
 
-  private static MethodHandle downcall(String name, FunctionDescriptor desc) {
+  private static MethodHandle downcall(
+      String name, FunctionDescriptor desc, Linker.Option... opts) {
     MemorySegment symbol =
         LIB.find(name)
             .orElseThrow(
@@ -580,6 +589,6 @@ public final class SQLiteNative {
                         "SQLite symbol not found: "
                             + name
                             + ". Is the sqlite3 library loaded correctly?"));
-    return LINKER.downcallHandle(symbol, desc);
+    return LINKER.downcallHandle(symbol, desc, opts);
   }
 }

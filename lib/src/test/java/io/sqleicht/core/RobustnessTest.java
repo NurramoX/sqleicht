@@ -79,7 +79,7 @@ class RobustnessTest {
           conn -> {
             conn.execute("CREATE TABLE t (id INTEGER)");
             // This uses the client API which calls submit() — re-entrant
-            db.prepare("INSERT INTO t VALUES (?)").bind(1, 42).executeUpdate();
+            db.update("INSERT INTO t VALUES (?)", 42);
             return null;
           });
 

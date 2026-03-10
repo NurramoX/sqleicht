@@ -1,4 +1,7 @@
-package io.sqleicht.core;
+package io.sqleicht;
+
+import io.sqleicht.core.SQLeichtConnection;
+import io.sqleicht.core.SQLeichtException;
 
 @FunctionalInterface
 public interface TaskFunction<T> {

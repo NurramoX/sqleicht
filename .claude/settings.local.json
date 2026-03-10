@@ -18,7 +18,8 @@
       "WebFetch(domain:sqlite.org)",
       "Bash(where crocodocs:*)",
       "Bash(./gradlew :lib:test:*)",
-      "Bash(./gradlew :lib:cleanTest:*)"
+      "Bash(./gradlew :lib:cleanTest:*)",
+      "Bash(./gradlew :lib:compileJava:*)"
     ]
   }
 }

@@ -89,7 +89,11 @@ public final class SQLeichtConnection {
     }
   }
 
-  public void forEach(String sql, RowConsumer consumer, Object... params) throws SQLeichtException {
+  public void forEach(String sql, RowConsumer consumer) throws SQLeichtException {
+    forEach(sql, null, consumer);
+  }
+
+  public void forEach(String sql, Object[] params, RowConsumer consumer) throws SQLeichtException {
     MemorySegment stmt = handle.stmtCache().acquire(sql);
     try {
       try (var arena = Arena.ofConfined()) {
@@ -155,7 +159,7 @@ public final class SQLeichtConnection {
     return SQLiteNative.changes(handle.db());
   }
 
-  public int connectionId() {
+  int connectionId() {
     return System.identityHashCode(handle);
   }
 
@@ -175,6 +179,7 @@ public final class SQLeichtConnection {
         case Float v -> SQLiteNative.bindDouble(stmt, idx, v.doubleValue());
         case Short v -> SQLiteNative.bindInt(stmt, idx, v.intValue());
         case Byte v -> SQLiteNative.bindInt(stmt, idx, v.intValue());
+        case Boolean v -> SQLiteNative.bindInt(stmt, idx, v ? 1 : 0);
         case String v -> SQLiteNative.bindText(arena, stmt, idx, v);
         case byte[] v -> SQLiteNative.bindBlob(arena, stmt, idx, v);
         case LocalDate v -> SQLiteNative.bindText(arena, stmt, idx, v.toString());
